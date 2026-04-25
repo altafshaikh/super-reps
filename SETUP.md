@@ -20,16 +20,37 @@ EXPO_PUBLIC_GROQ_API_KEY=gsk_...
 
 ## 2. Supabase Database Setup
 
-In Supabase SQL Editor, run these two files **in order**:
+Pick **one** of the following.
 
-1. `supabase/schema.sql` — creates all tables, RLS policies, indexes
-2. `supabase/seed_exercises.sql` — seeds 100 exercises
+### Option A — SQL Editor (no DB password in the project)
+
+In Supabase **SQL Editor**, run these two files **in order**:
+
+1. `supabase/schema.sql` — creates all tables, RLS policies, indexes  
+2. `supabase/seed_exercises.sql` — seeds 100 exercises  
+
+Paste each file’s contents, run, then repeat for the second file.
+
+### Option B — CLI from your machine
+
+1. In Supabase go to **Settings → Database** and copy the **Connection string** (URI). Prefer **Transaction** pooler mode if shown (username looks like `postgres.yourprojectref`).  
+2. Add it to `.env` as `DATABASE_URL=postgresql://…` using the **plain** password from Supabase (replace `[YOUR-PASSWORD]`). `npm run db:setup` percent-encodes user and password for the CLI, including pooler usernames and characters like `&`, `%`, and `+`.  
+3. From the project root:
+
+```bash
+npm run db:setup
+```
+
+This runs both files using **postgres.js** in Postgres “simple query” mode (multiple statements per file). The Supabase CLI’s `db query -f` path uses prepared statements and errors on multi-statement files.
 
 ## 3. Run the App
 
 ```bash
+npm install
 npm start
 ```
+
+`npm install` uses `legacy-peer-deps` (see `.npmrc`) so dependency resolution matches Expo’s peer setup.
 
 Then press:
 - `i` for iOS Simulator
