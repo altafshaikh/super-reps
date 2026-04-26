@@ -7,7 +7,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "db:setup": "node --env-file=.env scripts/db-setup.mjs"
+    "build:web": "expo export -p web",
+    "preview:web": "expo serve",
+    "sync:vercel-env": "node scripts/sync-vercel-env.mjs",
+    "deploy": "npm run build:web && vercel deploy --prod",
+    "db:setup": "node --env-file=.env scripts/db-setup.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -46,5 +51,8 @@
     "postgres": "^3.4.9",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
 }

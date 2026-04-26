@@ -7,6 +7,12 @@ node_modules/
 .expo/
 dist/
 web-build/
+
+# Vercel (per-machine link; do not commit secrets)
+.vercel/
+
+# Supabase CLI cache
+supabase/.temp/
 expo-env.d.ts
 
 # Native

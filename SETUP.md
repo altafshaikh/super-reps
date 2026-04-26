@@ -91,3 +91,17 @@ app/
 ## AI Models (Groq)
 - **Routine Builder**: `llama-3.3-70b-versatile` — best quality for programme generation
 - **In-workout Coach**: `llama-3.1-8b-instant` — fast real-time coaching
+
+## 5. Deploy web (Vercel CLI)
+
+Static export goes to **`dist/`** (see `vercel.json`). One-time link, sync env from local `.env`, then deploy:
+
+```bash
+vercel link
+npm run sync:vercel-env
+npm run deploy
+```
+
+`sync:vercel-env` pushes only **`EXPO_PUBLIC_*`** to Vercel **Production** (uses `--sensitive`). Preview envs often need a branch in the Vercel UI—set those there if you use Preview deployments. `DATABASE_URL` stays local for `npm run db:setup` only.
+
+In **Supabase → Authentication → URL configuration**, add your production site URL when you have it.
