@@ -3,17 +3,31 @@ import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
+function profileErrorMessage(err: { message?: string; code?: string; details?: string }): string {
+  const blob = `${err.details ?? ''} ${err.message ?? ''}`.toLowerCase();
+  if (blob.includes('username') || blob.includes('users_username')) {
+    return 'That username is already taken. Pick another one.';
+  }
+  if (err.code === '23505') {
+    return 'This account or username already exists. Try signing in, or use a different username.';
+  }
+  return err.message || 'Could not save your profile.';
+}
+
 export default function SignupScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!email || !password || !username) {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase();
+    if (!cleanEmail || !password || !cleanUsername) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
       return;
     }
@@ -22,21 +36,43 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+    });
     if (error) {
       setLoading(false);
       Alert.alert('Sign up failed', error.message);
       return;
     }
-    if (data.user) {
-      await supabase.from('users').insert({
-        id: data.user.id,
-        email,
-        username,
-        plan: 'free',
-      });
+    if (!data.user) {
+      setLoading(false);
+      Alert.alert(
+        'Check your email',
+        'If email confirmation is on, open the link in your inbox to finish signup.',
+      );
+      return;
     }
+
+    const { error: profileError } = await supabase.from('users').upsert(
+      {
+        id: data.user.id,
+        email: cleanEmail,
+        username: cleanUsername,
+        plan: 'free',
+      },
+      { onConflict: 'id' },
+    );
+
+    if (profileError) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      Alert.alert('Could not finish signup', profileErrorMessage(profileError));
+      return;
+    }
+
     setLoading(false);
+    router.replace('/(auth)/onboarding/goal');
   };
 
   return (
