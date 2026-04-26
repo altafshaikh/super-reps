@@ -2,6 +2,10 @@
 
 ## 1. Environment Variables
 
+**Runtime (web + mobile):** only **`EXPO_PUBLIC_*`** — the app talks to Postgres **through Supabase’s API** (`lib/supabase.ts`) with the **anon** key. You do **not** need a Postgres `DATABASE_URL` in the app for inserts or queries.
+
+**`DATABASE_URL`:** optional, **local dev / one-off scripts only** — used by `npm run db:setup` to run SQL files against Postgres. Keep it in your private `.env` on your machine; **do not** add it to Vercel (static export does not run `db-setup`; exposing a DB password in hosted env vars is unnecessary risk).
+
 Copy `.env.example` to `.env` and fill in your keys:
 
 ```bash
