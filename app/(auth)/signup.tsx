@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator, Alert,
+  Platform, ScrollView, ActivityIndicator, Alert, StyleSheet, StatusBar,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { COLORS } from '@/constants';
 
 function profileErrorMessage(err: { message?: string; code?: string; details?: string }): string {
   const blob = `${err.details ?? ''} ${err.message ?? ''}`.toLowerCase();
@@ -76,79 +77,61 @@ export default function SignupScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-surface"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="flex-1 justify-center px-6 py-12">
-          <View className="mb-10">
-            <Text className="text-4xl font-bold text-white text-center tracking-tight">
-              SuperReps
-            </Text>
-            <Text className="text-white/50 text-center mt-2 text-base">
-              Create your account
-            </Text>
+    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <StatusBar barStyle="light-content" />
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <View style={s.container}>
+          <View style={s.logoBlock}>
+            <Text style={s.appName}>SuperReps</Text>
+            <Text style={s.tagline}>Create your account</Text>
           </View>
 
-          <View className="gap-4">
+          <View style={s.form}>
             <View>
-              <Text className="text-white/70 text-sm mb-1.5 font-medium">Username</Text>
+              <Text style={s.fieldLabel}>Username</Text>
               <TextInput
-                className="bg-surface-card border border-surface-border rounded-xl px-4 py-3.5 text-white text-base"
+                style={s.input}
                 placeholder="lifter42"
-                placeholderTextColor="#475569"
+                placeholderTextColor={COLORS.ink3}
                 value={username}
                 onChangeText={setUsername}
                 autoCapitalize="none"
               />
             </View>
-
             <View>
-              <Text className="text-white/70 text-sm mb-1.5 font-medium">Email</Text>
+              <Text style={s.fieldLabel}>Email</Text>
               <TextInput
-                className="bg-surface-card border border-surface-border rounded-xl px-4 py-3.5 text-white text-base"
+                style={s.input}
                 placeholder="you@example.com"
-                placeholderTextColor="#475569"
+                placeholderTextColor={COLORS.ink3}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
             </View>
-
             <View>
-              <Text className="text-white/70 text-sm mb-1.5 font-medium">Password</Text>
+              <Text style={s.fieldLabel}>Password</Text>
               <TextInput
-                className="bg-surface-card border border-surface-border rounded-xl px-4 py-3.5 text-white text-base"
+                style={s.input}
                 placeholder="Min 6 characters"
-                placeholderTextColor="#475569"
+                placeholderTextColor={COLORS.ink3}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
               />
             </View>
-
-            <TouchableOpacity
-              className="bg-brand-600 rounded-xl py-4 mt-2 items-center"
-              onPress={handleSignup}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-white font-bold text-base">Create Account</Text>
+            <TouchableOpacity style={s.primaryBtn} onPress={handleSignup} disabled={loading} activeOpacity={0.85}>
+              {loading ? <ActivityIndicator color={COLORS.bg} /> : (
+                <Text style={s.primaryBtnText}>Create Account</Text>
               )}
             </TouchableOpacity>
           </View>
 
-          <View className="mt-8 flex-row justify-center">
-            <Text className="text-white/50">Already have an account? </Text>
+          <View style={s.footer}>
+            <Text style={{ color: COLORS.ink3 }}>Already have an account? </Text>
             <Link href="/(auth)/login">
-              <Text className="text-brand-500 font-semibold">Sign in</Text>
+              <Text style={{ color: COLORS.blue, fontWeight: '600' }}>Sign in</Text>
             </Link>
           </View>
         </View>
@@ -156,3 +139,25 @@ export default function SignupScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: COLORS.bg },
+  scroll: { flexGrow: 1 },
+  container: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48 },
+  logoBlock: { marginBottom: 40, alignItems: 'center' },
+  appName: { fontSize: 40, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
+  tagline: { color: COLORS.ink3, marginTop: 6, fontSize: 15 },
+  form: { gap: 16 },
+  fieldLabel: { color: COLORS.ink2, fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  input: {
+    backgroundColor: COLORS.surface, borderWidth: 0.5, borderColor: COLORS.borderMid,
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 15, color: COLORS.ink,
+  },
+  primaryBtn: {
+    backgroundColor: COLORS.ink, borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center', marginTop: 4,
+  },
+  primaryBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 16 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32 },
+});

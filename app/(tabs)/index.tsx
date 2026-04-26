@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
 import type { WorkoutSession } from '@/types';
 import { formatDuration, timeAgo } from '@/lib/utils';
 import { COLORS } from '@/constants';
+import { SRCard, SRMetric, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -15,7 +17,7 @@ export default function HomeScreen() {
   const { isActive } = useWorkoutStore();
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [streak, setStreak] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [weeklyVol, setWeeklyVol] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -29,124 +31,213 @@ export default function HomeScreen() {
       .eq('user_id', user!.id)
       .not('finished_at', 'is', null)
       .order('started_at', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     if (data) {
       setRecentSessions(data as WorkoutSession[]);
-      setStreak(calcStreak(data));
+      setStreak(calcStreak(data as WorkoutSession[]));
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const weekVol = (data as WorkoutSession[])
+        .filter(s => new Date(s.started_at).getTime() > weekAgo)
+        .reduce((sum, s) => sum + (s.volume_total ?? 0), 0);
+      setWeeklyVol(weekVol);
     }
-    setLoading(false);
   };
 
   const calcStreak = (sessions: WorkoutSession[]): number => {
     if (!sessions.length) return 0;
-    let streak = 0;
+    let s = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     for (let i = 0; i < 30; i++) {
       const day = new Date(today);
       day.setDate(today.getDate() - i);
-      const hasSession = sessions.some(s => {
-        const d = new Date(s.started_at);
+      const has = sessions.some(ws => {
+        const d = new Date(ws.started_at);
         d.setHours(0, 0, 0, 0);
         return d.getTime() === day.getTime();
       });
-      if (hasSession) streak++;
+      if (has) s++;
       else if (i > 0) break;
     }
-    return streak;
+    return s;
   };
 
+  const thisWeekSessions = recentSessions.filter(s => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return new Date(s.started_at).getTime() > weekAgo;
+  });
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
+  const userName = user?.username ?? user?.email?.split('@')[0] ?? 'Lifter';
+  const initial = userName[0]?.toUpperCase() ?? 'U';
+
+  const totalVolStr = weeklyVol >= 1000
+    ? `${(weeklyVol / 1000).toFixed(1)}k`
+    : String(weeklyVol);
+
   return (
-    <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: 32 }}>
-      {/* Header */}
-      <View className="px-5 pt-16 pb-6">
-        <Text className="text-white/50 text-sm font-medium">Welcome back,</Text>
-        <Text className="text-white text-2xl font-bold mt-0.5">
-          {user?.username ?? 'Lifter'} 👋
-        </Text>
-      </View>
-
-      {/* Stats row */}
-      <View className="px-5 flex-row gap-3 mb-6">
-        <View className="flex-1 bg-surface-card rounded-xl p-4 border border-surface-border">
-          <Text className="text-3xl font-bold text-brand-500">{streak}</Text>
-          <Text className="text-white/50 text-xs mt-1">Day streak 🔥</Text>
-        </View>
-        <View className="flex-1 bg-surface-card rounded-xl p-4 border border-surface-border">
-          <Text className="text-3xl font-bold text-white">{recentSessions.length}</Text>
-          <Text className="text-white/50 text-xs mt-1">This week</Text>
-        </View>
-        <View className="flex-1 bg-surface-card rounded-xl p-4 border border-surface-border">
-          <Text className="text-3xl font-bold text-white">
-            {recentSessions.reduce((sum, s) => sum + (s.volume_total ?? 0), 0).toLocaleString()}
-          </Text>
-          <Text className="text-white/50 text-xs mt-1">kg lifted</Text>
-        </View>
-      </View>
-
-      {/* Start workout CTA */}
-      {isActive ? (
-        <TouchableOpacity
-          className="mx-5 mb-6 bg-green-500/20 border border-green-500 rounded-xl p-4 flex-row items-center gap-3"
-          onPress={() => router.push('/workout/active')}
-        >
-          <View className="w-3 h-3 rounded-full bg-green-500" />
-          <Text className="text-green-400 font-bold text-base flex-1">Workout in progress</Text>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.success} />
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity
-          className="mx-5 mb-6 bg-brand-600 rounded-xl p-4 flex-row items-center justify-between"
-          onPress={() => router.push('/(tabs)/log')}
-        >
-          <View>
-            <Text className="text-white font-bold text-lg">Start Workout</Text>
-            <Text className="text-white/70 text-sm mt-0.5">Pick a routine or start empty</Text>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Header card */}
+        <SRCard style={s.headerCard}>
+          {/* Greeting row */}
+          <View style={s.greetRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.greetDate}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
+              <Text style={s.greetName}>{greeting},{'\n'}{userName}</Text>
+            </View>
+            <View style={s.avatar}>
+              <Text style={s.avatarText}>{initial}</Text>
+            </View>
           </View>
-          <Ionicons name="play-circle" size={40} color="white" />
-        </TouchableOpacity>
-      )}
 
-      {/* Recent sessions */}
-      <View className="px-5">
-        <Text className="text-white font-bold text-lg mb-4">Recent Workouts</Text>
-        {loading ? (
-          <Text className="text-white/40 text-center py-8">Loading...</Text>
-        ) : recentSessions.length === 0 ? (
-          <View className="bg-surface-card border border-surface-border rounded-xl p-6 items-center">
-            <Text className="text-3xl mb-3">🏋️</Text>
-            <Text className="text-white font-semibold text-center">No workouts yet</Text>
-            <Text className="text-white/50 text-sm text-center mt-1">
-              Start your first session or let AI build you a routine
-            </Text>
+          {/* Metrics row */}
+          <View style={s.metricsRow}>
+            <SRMetric label="Day Streak 🔥" value={streak} />
+            <View style={{ width: 0.5, backgroundColor: COLORS.border, height: 36 }} />
+            <SRMetric label="This Week" value={thisWeekSessions.length} unit=" sess" />
+            <View style={{ width: 0.5, backgroundColor: COLORS.border, height: 36 }} />
+            <SRMetric label="Total Vol" value={totalVolStr} unit=" kg" />
           </View>
-        ) : (
-          <View className="gap-3">
-            {recentSessions.map(session => (
-              <View
-                key={session.id}
-                className="bg-surface-card border border-surface-border rounded-xl p-4"
-              >
-                <View className="flex-row justify-between items-start">
-                  <Text className="text-white font-semibold flex-1">
-                    {session.routine_name ?? 'Quick Workout'}
-                  </Text>
-                  <Text className="text-white/40 text-sm">{timeAgo(session.started_at)}</Text>
+        </SRCard>
+
+        <View style={s.content}>
+          {/* Goal / level pills */}
+          {user?.goal || user?.level ? (
+            <View style={s.pillRow}>
+              {user?.goal ? <SRPill label={`Goal: ${user.goal}`} muted size="xs" style={{ marginRight: 6 }} /> : null}
+              {user?.level ? <SRPill label={user.level} muted size="xs" /> : null}
+            </View>
+          ) : null}
+
+          {/* Active workout banner */}
+          {isActive ? (
+            <TouchableOpacity onPress={() => router.push('/workout/active')} style={s.activeBanner}>
+              <View style={s.activeDot} />
+              <Text style={s.activeBannerText}>Workout in progress — tap to continue</Text>
+            </TouchableOpacity>
+          ) : (
+            <SRCard style={s.startCard}>
+              <View style={s.startInner}>
+                <View>
+                  <Text style={s.startLabel}>Ready to train?</Text>
+                  <Text style={s.startTitle}>Start Workout</Text>
                 </View>
-                <View className="flex-row gap-4 mt-2">
-                  <Text className="text-white/50 text-sm">
-                    ⏱ {formatDuration(session.duration_seconds ?? 0)}
-                  </Text>
-                  <Text className="text-white/50 text-sm">
-                    🏋️ {session.volume_total?.toLocaleString() ?? 0} kg
-                  </Text>
-                </View>
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/log')}
+                  style={s.startBtn}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.startBtnText}>Start →</Text>
+                </TouchableOpacity>
               </View>
-            ))}
-          </View>
-        )}
-      </View>
-    </ScrollView>
+            </SRCard>
+          )}
+
+          {/* Recent Workouts */}
+          <SRCard>
+            <SRSectionLabel>Recent Workouts</SRSectionLabel>
+            {recentSessions.length === 0 ? (
+              <View style={s.emptyState}>
+                <Text style={s.emptyText}>No workouts yet — start one above</Text>
+              </View>
+            ) : (
+              recentSessions.slice(0, 5).map((session, i) => (
+                <View key={session.id}>
+                  {i > 0 && <SRDivider indent={20} />}
+                  <View style={s.sessionRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.sessionName}>{session.routine_name ?? 'Quick Workout'}</Text>
+                      <Text style={s.sessionMeta}>
+                        {timeAgo(session.started_at)} · {formatDuration(session.duration_seconds ?? 0)}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={s.sessionVol}>
+                        {(session.volume_total ?? 0) >= 1000
+                          ? `${((session.volume_total ?? 0) / 1000).toFixed(1)}k`
+                          : String(session.volume_total ?? 0)} kg
+                      </Text>
+                      <Text style={s.sessionVolLabel}>volume</Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            )}
+          </SRCard>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: COLORS.bg },
+  headerCard: {
+    margin: 14,
+    marginTop: 56,
+    borderRadius: 20,
+  },
+  greetRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    padding: 20,
+    paddingBottom: 14,
+  },
+  greetDate: { fontSize: 11, color: COLORS.ink3, fontWeight: '500', marginBottom: 3 },
+  greetName: { fontSize: 22, fontWeight: '700', color: COLORS.ink, lineHeight: 28 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 99,
+    backgroundColor: COLORS.ink,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: COLORS.bg, fontSize: 20, fontWeight: '900' },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.border,
+  },
+  content: { paddingHorizontal: 14, gap: 10 },
+  pillRow: { flexDirection: 'row', marginBottom: 2 },
+  activeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.greenLight, borderRadius: 14,
+    padding: 14, borderWidth: 0.5, borderColor: COLORS.green,
+  },
+  activeDot: { width: 10, height: 10, borderRadius: 99, backgroundColor: COLORS.green },
+  activeBannerText: { color: COLORS.green, fontWeight: '700', fontSize: 14, flex: 1 },
+  startCard: { padding: 0 },
+  startInner: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', padding: 18,
+  },
+  startLabel: { fontSize: 11, color: COLORS.ink3, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 3 },
+  startTitle: { fontSize: 24, fontWeight: '900', color: COLORS.ink },
+  startBtn: {
+    backgroundColor: COLORS.ink, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 20,
+  },
+  startBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 15 },
+  emptyState: { padding: 20, alignItems: 'center' },
+  emptyText: { color: COLORS.ink3, fontSize: 14 },
+  sessionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', padding: 11, paddingHorizontal: 20,
+  },
+  sessionName: { fontSize: 14, fontWeight: '600', color: COLORS.ink },
+  sessionMeta: { fontSize: 11, color: COLORS.ink3, marginTop: 1 },
+  sessionVol: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
+  sessionVolLabel: { fontSize: 10, color: COLORS.ink3 },
+});
