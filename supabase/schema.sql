@@ -75,15 +75,18 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
 
 -- Workout sets
 CREATE TABLE IF NOT EXISTS workout_sets (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id    UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-  exercise_id   UUID NOT NULL REFERENCES exercises(id),
-  set_index     INTEGER NOT NULL,
-  set_type      TEXT DEFAULT 'working' CHECK (set_type IN ('warmup', 'working', 'drop', 'failure')),
-  weight_kg     NUMERIC NOT NULL DEFAULT 0,
-  reps          INTEGER NOT NULL DEFAULT 0,
-  rpe           NUMERIC,
-  completed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id         UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+  exercise_id        UUID NOT NULL REFERENCES exercises(id),
+  set_index          INTEGER NOT NULL,
+  set_type           TEXT DEFAULT 'working' CHECK (set_type IN ('warmup', 'working', 'drop', 'failure')),
+  weight_kg          NUMERIC NOT NULL DEFAULT 0,
+  reps               INTEGER NOT NULL DEFAULT 0,
+  rpe                NUMERIC,
+  duration_seconds   INTEGER,
+  distance_km        NUMERIC,
+  notes              TEXT,
+  completed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Personal records

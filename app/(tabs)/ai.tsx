@@ -4,10 +4,11 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, StyleSheet, StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
-import { QUICK_PROMPTS, COLORS } from '@/constants';
+import { QUICK_PROMPTS, COLORS, quickPromptParts } from '@/constants';
 import type { AIRoutineJSON, Exercise } from '@/types';
 import { SRCard, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
 
@@ -144,7 +145,9 @@ export default function AITab() {
             {/* Quick picks */}
             <SRCard>
               <SRSectionLabel>Quick Picks</SRSectionLabel>
-              {QUICK_PROMPTS.map((p, i) => (
+              {QUICK_PROMPTS.map((p, i) => {
+                const { title, subtitle } = quickPromptParts(p);
+                return (
                 <View key={p}>
                   {i > 0 && <SRDivider indent={20} />}
                   <TouchableOpacity
@@ -152,12 +155,18 @@ export default function AITab() {
                     activeOpacity={0.7}
                     onPress={() => setPrompt(p)}
                   >
-                    <Text style={s.quickPickIcon}>⚡</Text>
-                    <Text style={s.quickPickText}>{p}</Text>
-                    <Text style={{ color: COLORS.ink3 }}>›</Text>
+                    <Ionicons name="flash" size={15} color={COLORS.amber} style={{ marginTop: 1 }} />
+                    <Text style={s.quickPickTextWrap} numberOfLines={3}>
+                      <Text style={s.quickPickTitle}>{title}</Text>
+                      {subtitle ? (
+                        <Text style={s.quickPickSubtitle}>{' — '}{subtitle}</Text>
+                      ) : null}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={18} color={COLORS.ink3} />
                   </TouchableOpacity>
                 </View>
-              ))}
+                );
+              })}
             </SRCard>
           </>
         )}
@@ -310,10 +319,11 @@ const s = StyleSheet.create({
   generateBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 15 },
   errorText: { color: COLORS.red, fontSize: 13, marginTop: 10, textAlign: 'center' },
   quickPickRow: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, paddingHorizontal: 20, gap: 10,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, gap: 12,
   },
-  quickPickIcon: { fontSize: 13 },
-  quickPickText: { flex: 1, fontSize: 13, color: COLORS.ink2 },
+  quickPickTextWrap: { flex: 1, flexWrap: 'wrap' },
+  quickPickTitle: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
+  quickPickSubtitle: { fontSize: 14, fontWeight: '400', color: COLORS.ink3 },
   loadingState: { alignItems: 'center', paddingTop: 80, paddingBottom: 40, gap: 16 },
   loadingTitle: { fontSize: 18, fontWeight: '700', color: COLORS.ink },
   loadingSubtitle: { fontSize: 13, color: COLORS.ink3, textAlign: 'center', lineHeight: 20 },

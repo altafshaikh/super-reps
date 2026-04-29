@@ -27,9 +27,9 @@ export default function WorkoutCompleteScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           className="border border-surface-border rounded-xl py-4 items-center"
-          onPress={() => router.replace('/(tabs)/progress')}
+          onPress={() => router.replace('/(tabs)/profile')}
         >
-          <Text className="text-white/70 font-medium text-base">View Progress</Text>
+          <Text className="text-white/70 font-medium text-base">View profile</Text>
         </TouchableOpacity>
       </View>
     </View>

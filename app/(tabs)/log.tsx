@@ -74,15 +74,25 @@ export default function LogScreen() {
 
           {/* Routines */}
           <SRCard>
-            <SRSectionLabel action="+ New AI routine" onAction={() => router.push('/(tabs)/ai')}>
+            <SRSectionLabel
+              action="Import"
+              onAction={() => router.push('/routines/import-hevy')}
+              action2="+ New AI routine"
+              onAction2={() => router.push('/(tabs)/ai')}
+            >
               My Routines
             </SRSectionLabel>
             {routines.length === 0 ? (
               <View style={s.empty}>
                 <Text style={s.emptyText}>No routines yet</Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/ai')} style={s.emptyLink}>
-                  <Text style={{ color: COLORS.blue, fontWeight: '600', fontSize: 13 }}>Build one with AI →</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 4 }}>
+                  <TouchableOpacity onPress={() => router.push('/routines/import-hevy')} style={s.emptyLink}>
+                    <Text style={{ color: COLORS.blue, fontWeight: '600', fontSize: 13 }}>Import workouts →</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push('/(tabs)/ai')} style={s.emptyLink}>
+                    <Text style={{ color: COLORS.blue, fontWeight: '600', fontSize: 13 }}>Build with AI →</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               routines.map((routine, i) => {

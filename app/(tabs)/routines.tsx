@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -39,16 +39,31 @@ export default function RoutinesScreen() {
 
   return (
     <View className="flex-1 bg-surface">
-      {/* Header */}
-      <View className="px-5 pt-16 pb-4 flex-row items-center justify-between">
-        <Text className="text-white text-2xl font-bold">Routines</Text>
-        <TouchableOpacity
-          className="bg-brand-600 rounded-xl px-4 py-2 flex-row items-center gap-2"
-          onPress={() => router.push('/routines/ai-builder')}
-        >
-          <Ionicons name="sparkles" size={16} color="white" />
-          <Text className="text-white font-semibold text-sm">AI Build</Text>
-        </TouchableOpacity>
+      {/* Header — stacked so Import + AI Build always fit (narrow phones / web) */}
+      <View className="px-5 pt-16 pb-4">
+        <Text className="text-white text-2xl font-bold mb-3">Routines</Text>
+        <View className="flex-row gap-2">
+          <TouchableOpacity
+            className="flex-1 bg-surface-card border border-surface-border rounded-xl py-3 px-2 flex-row items-center justify-center gap-2"
+            onPress={() => router.push('/routines/import-hevy')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="download-outline" size={18} color={COLORS.primary} />
+            <Text className="text-white font-bold text-sm" numberOfLines={1}>
+              Import
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-1 bg-brand-600 rounded-xl py-3 px-2 flex-row items-center justify-center gap-2"
+            onPress={() => router.push('/routines/ai-builder')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="sparkles" size={18} color="white" />
+            <Text className="text-white font-bold text-sm" numberOfLines={1}>
+              AI Build
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -58,19 +73,28 @@ export default function RoutinesScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32, flexGrow: 1 }}
         ListEmptyComponent={
           !loading ? (
-            <View className="flex-1 items-center justify-center py-20">
+            <View className="flex-1 w-full items-center justify-center py-20 px-4">
               <Text className="text-4xl mb-4">📋</Text>
               <Text className="text-white font-semibold text-lg text-center">No routines yet</Text>
-              <Text className="text-white/50 text-sm text-center mt-2 mb-6">
-                Let AI build your first programme in seconds
+              <Text className="text-white/50 text-sm text-center mt-2 mb-6 px-4">
+                Import a Hevy CSV or let AI build your first programme
               </Text>
-              <TouchableOpacity
-                className="bg-brand-600 rounded-xl px-6 py-3 flex-row items-center gap-2"
-                onPress={() => router.push('/routines/ai-builder')}
-              >
-                <Ionicons name="sparkles" size={18} color="white" />
-                <Text className="text-white font-bold">Build with AI</Text>
-              </TouchableOpacity>
+              <View className="flex-row gap-3 w-full max-w-sm px-2">
+                <TouchableOpacity
+                  className="flex-1 bg-surface-card border border-surface-border rounded-xl py-3 flex-row items-center justify-center gap-2"
+                  onPress={() => router.push('/routines/import-hevy')}
+                >
+                  <Ionicons name="download-outline" size={18} color={COLORS.primary} />
+                  <Text className="text-white font-bold text-sm">Import</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="flex-1 bg-brand-600 rounded-xl py-3 flex-row items-center justify-center gap-2"
+                  onPress={() => router.push('/routines/ai-builder')}
+                >
+                  <Ionicons name="sparkles" size={18} color="white" />
+                  <Text className="text-white font-bold text-sm">AI Build</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : null
         }

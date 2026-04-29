@@ -1,14 +1,18 @@
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useUserStore } from '@/stores/userStore';
 import { LEVEL_OPTIONS, COLORS } from '@/constants';
 import type { Level } from '@/types';
 
 export default function OnboardingLevel() {
   const router = useRouter();
-  const { updateProfile } = useUserStore();
+  const { updateProfile, user } = useUserStore();
   const [selected, setSelected] = useState<Level | null>(null);
+
+  useEffect(() => {
+    if (user?.level) setSelected(user.level);
+  }, [user?.level]);
 
   const handleNext = async () => {
     if (!selected) return;

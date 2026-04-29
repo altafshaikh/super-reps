@@ -17,8 +17,9 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="log" />
       <Tabs.Screen name="ai" />
-      <Tabs.Screen name="progress" />
       <Tabs.Screen name="profile" />
+      {/* Full routines list + Import (hidden from tab bar) */}
+      <Tabs.Screen name="routines" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -2,8 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+/** Non-empty defaults so `expo export` / SSR can bundle without env (e.g. CI). Set real values in production. */
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ||
+  'https://placeholder-not-configured.supabase.co';
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDI2NjIyMDAsImV4cCI6MTk1Nzk4MjIwMH0.EcHOCWLGfIBYI4oXL67K5hTaJFAudDnLurTmFFXN0WU';
 
 /** In-memory session during web SSR / static export (no `window`). */
 const ssrMemory = new Map<string, string>();

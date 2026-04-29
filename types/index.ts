@@ -68,7 +68,12 @@ export interface SetLog {
   weight_kg: number;
   reps: number;
   rpe: number | null;
+  /** Timed / cardio sets from Hevy-style CSV import */
+  duration_seconds?: number | null;
+  distance_km?: number | null;
+  notes?: string | null;
   completed_at: string;
+  exercise?: { name: string } | null;
 }
 
 export interface WorkoutSession {
@@ -81,7 +86,8 @@ export interface WorkoutSession {
   duration_seconds: number | null;
   notes: string | null;
   volume_total: number;
-  sets: SetLog[];
+  deleted_at?: string | null;
+  sets?: SetLog[];
 }
 
 export interface PersonalRecord {
@@ -91,6 +97,7 @@ export interface PersonalRecord {
   record_type: '1rm' | 'weight' | 'reps';
   value: number;
   achieved_at: string;
+  session_id?: string | null;
 }
 
 // AI types

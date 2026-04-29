@@ -12,7 +12,8 @@
     "sync:vercel-env": "node scripts/sync-vercel-env.mjs",
     "deploy": "npm run build:web && vercel deploy --prod",
     "db:setup": "node --env-file=.env scripts/db-setup.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate:assets": "node scripts/generate-brand-assets.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -49,6 +50,7 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "postgres": "^3.4.9",
+    "sharp": "^0.34.5",
     "typescript": "~5.9.2"
   },
   "private": true,

@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
-import { QUICK_PROMPTS, COLORS } from '@/constants';
+import { QUICK_PROMPTS, COLORS, quickPromptParts } from '@/constants';
 import type { AIRoutineJSON, Exercise } from '@/types';
 
 export default function AIBuilderScreen() {
@@ -129,16 +129,25 @@ export default function AIBuilderScreen() {
             {/* Quick prompts */}
             <Text className="text-white/50 text-sm mb-3">Quick picks</Text>
             <View className="gap-2 mb-6">
-              {QUICK_PROMPTS.map(p => (
+              {QUICK_PROMPTS.map(p => {
+                const { title, subtitle } = quickPromptParts(p);
+                return (
                 <TouchableOpacity
                   key={p}
                   onPress={() => setPrompt(p)}
-                  className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 flex-row items-center gap-3"
+                  className="bg-surface-card border border-surface-border rounded-xl px-4 py-4 flex-row items-center gap-3"
                 >
-                  <Ionicons name="flash" size={16} color={COLORS.primary} />
-                  <Text className="text-white/70 text-sm flex-1">{p}</Text>
+                  <Ionicons name="flash" size={16} color={COLORS.amber} />
+                  <Text className="flex-1 text-sm leading-5">
+                    <Text className="text-white font-bold">{title}</Text>
+                    {subtitle ? (
+                      <Text className="text-white/50 font-normal">{` — ${subtitle}`}</Text>
+                    ) : null}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={COLORS.textDim} />
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
 
             <TouchableOpacity

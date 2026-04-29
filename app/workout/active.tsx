@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, FlatList, Modal, ActivityIndicator,
+  Alert, FlatList, Modal, ActivityIndicator, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,12 +72,78 @@ export default function ActiveWorkoutScreen() {
     setCoachLoading(null);
   };
 
-  const handleFinish = () => {
-    const completedSets = exercises.flatMap(e => e.sets.filter(s => s.completed));
-    if (completedSets.length === 0) {
-      Alert.alert('No sets logged', 'Log at least one set before finishing.');
+  const discardWorkout = useCallback(() => {
+    resetWorkout();
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/log');
+  }, [resetWorkout, router]);
+
+  const confirmDiscard = useCallback(() => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Discard this workout? Nothing will be saved.')) {
+        discardWorkout();
+      }
       return;
     }
+    Alert.alert('Discard workout?', 'Nothing will be saved.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: discardWorkout },
+    ]);
+  }, [discardWorkout]);
+
+  const handleFinish = () => {
+    const completedSets = exercises.flatMap(e => e.sets.filter(s => s.completed));
+
+    if (exercises.length === 0) {
+      if (Platform.OS === 'web') {
+        const discard = typeof window !== 'undefined' &&
+          window.confirm(
+            'You have not added any exercises. Discard this empty workout?\n\nPress OK to discard, or Cancel to stay.',
+          );
+        if (discard) discardWorkout();
+        return;
+      }
+      Alert.alert(
+        'Nothing to save',
+        'Add at least one exercise before finishing, or discard this session.',
+        [
+          { text: 'Discard', style: 'destructive', onPress: discardWorkout },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    if (completedSets.length === 0) {
+      if (Platform.OS === 'web') {
+        const discard = typeof window !== 'undefined' &&
+          window.confirm(
+            'No sets completed yet. Discard this workout?\n\nPress OK to discard, or Cancel to stay.',
+          );
+        if (discard) discardWorkout();
+        return;
+      }
+      Alert.alert(
+        'No sets completed',
+        'Mark at least one set as done before finishing, or discard this session.',
+        [
+          { text: 'Discard', style: 'destructive', onPress: discardWorkout },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') {
+        const ok = window.confirm(
+          `Finish workout? You've logged ${completedSets.length} set(s).`,
+        );
+        if (ok) void saveAndFinish();
+      }
+      return;
+    }
+
     Alert.alert('Finish Workout?', `You've logged ${completedSets.length} sets.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Finish', onPress: saveAndFinish },
@@ -85,7 +151,14 @@ export default function ActiveWorkoutScreen() {
   };
 
   const saveAndFinish = async () => {
-    if (!user) return;
+    if (!user) {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('Sign in to save this workout.');
+      } else {
+        Alert.alert('Not signed in', 'Sign in to save your workout.');
+      }
+      return;
+    }
     const { exercises: exs, startedAt: sa, sessionId } = finishWorkout();
     const now = new Date();
     const duration = Math.floor((now.getTime() - sa.getTime()) / 1000);
@@ -119,8 +192,27 @@ export default function ActiveWorkoutScreen() {
       volume_total: volumeTotal,
     });
 
-    if (!sessionErr && setsToInsert.length > 0) {
-      await supabase.from('workout_sets').insert(setsToInsert);
+    if (sessionErr) {
+      const msg = sessionErr.message ?? 'Could not save workout.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(msg);
+      } else {
+        Alert.alert('Save failed', msg);
+      }
+      return;
+    }
+
+    if (setsToInsert.length > 0) {
+      const { error: setsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+      if (setsErr) {
+        const msg = setsErr.message ?? 'Could not save sets.';
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Save failed', msg);
+        }
+        return;
+      }
     }
 
     resetWorkout();
@@ -152,19 +244,28 @@ export default function ActiveWorkoutScreen() {
   return (
     <View className="flex-1 bg-surface">
       {/* Header */}
-      <View className="px-5 pt-16 pb-3 flex-row items-center justify-between">
-        <View>
+      <View className="px-5 pt-16 pb-3 flex-row items-start justify-between">
+        <View className="flex-1 pr-2">
           <Text className="text-white font-bold text-base" numberOfLines={1}>
             {routineName ?? 'Quick Workout'}
           </Text>
           <Text className="text-brand-500 font-bold text-2xl">{formatDuration(elapsed)}</Text>
         </View>
-        <TouchableOpacity
-          className="bg-green-500 rounded-xl px-4 py-2.5"
-          onPress={handleFinish}
-        >
-          <Text className="text-white font-bold text-sm">Finish</Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-1">
+          <TouchableOpacity
+            className="px-3 py-2.5 rounded-xl"
+            onPress={confirmDiscard}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+          >
+            <Text className="text-red-400 font-semibold text-sm">Discard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="bg-green-500 rounded-xl px-4 py-2.5"
+            onPress={handleFinish}
+          >
+            <Text className="text-white font-bold text-sm">Finish</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Rest timer */}

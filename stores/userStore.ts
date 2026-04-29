@@ -24,7 +24,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
       .select('*')
       .eq('id', userId)
       .single();
-    if (!error && data) set({ user: data as User });
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!error && data && session?.user?.id === userId) {
+      set({ user: data as User });
+    }
     set({ loading: false });
   },
 
@@ -41,7 +46,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null });
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      set({ user: null });
+    }
   },
 }));

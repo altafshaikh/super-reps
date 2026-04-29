@@ -54,23 +54,6 @@ function IconAI({ active }: { active: boolean }) {
   );
 }
 
-function IconProgress({ active }: { active: boolean }) {
-  const c = active ? COLORS.ink : COLORS.ink3;
-  const sw = active ? 2 : 1.5;
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 18l5-6 4 3 5-7 4 4"
-        stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"
-      />
-      <Rect x={3} y={14} width={3} height={5} rx={1} fill={c} fillOpacity={active ? 0.8 : 0.25} />
-      <Rect x={8} y={11} width={3} height={8} rx={1} fill={c} fillOpacity={active ? 0.8 : 0.25} />
-      <Rect x={13} y={7} width={3} height={12} rx={1} fill={c} fillOpacity={active ? 0.8 : 0.25} />
-      <Rect x={18} y={9} width={3} height={10} rx={1} fill={c} fillOpacity={active ? 0.8 : 0.25} />
-    </Svg>
-  );
-}
-
 function IconProfile({ active }: { active: boolean }) {
   const c = active ? COLORS.ink : COLORS.ink3;
   const sw = active ? 2 : 1.5;
@@ -90,7 +73,6 @@ const TABS = [
   { id: 'index',    label: 'Home',     Icon: IconHome },
   { id: 'log',      label: 'Log',      Icon: IconLog },
   { id: 'ai',       label: 'AI',       Icon: IconAI },
-  { id: 'progress', label: 'Progress', Icon: IconProgress },
   { id: 'profile',  label: 'Profile',  Icon: IconProfile },
 ];
 

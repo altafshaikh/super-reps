@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AIRoutineJSON, Exercise } from '@/types';
 
 const client = new Groq({
-  apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY!,
+  apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim() || 'gsk_placeholder_for_build_without_env',
   dangerouslyAllowBrowser: true,
 });
 

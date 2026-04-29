@@ -22,13 +22,23 @@ export const LEVEL_OPTIONS = [
 ];
 
 export const QUICK_PROMPTS = [
-  'PPL 6 days — barbell + dumbbells',
-  'Full body 3 days — beginner friendly',
-  'Upper/Lower 4 days — strength focus',
-  'Home gym workout — dumbbells only',
-  'Bro split 5 days — hypertrophy',
-  'Minimalist 3 days — full body',
+  'Push Pull Legs (PPL) 6 day — barbell, dumbbells, cables & machines',
+  'Upper Lower 4 day — strength focus, main compounds',
+  'Full Body 3 day — beginner friendly',
+  'Bro Split 5 day — classic bodybuilding split',
+  'Home Workout — dumbbells, bands, or bodyweight',
 ];
+
+/** Split "Title — detail" for Quick Picks UI (uses em dash U+2014). */
+export function quickPromptParts(line: string): { title: string; subtitle?: string } {
+  const sep = ' — ';
+  const i = line.indexOf(sep);
+  if (i === -1) return { title: line };
+  return {
+    title: line.slice(0, i).trim(),
+    subtitle: line.slice(i + sep.length).trim(),
+  };
+}
 
 export const COLORS = {
   bg: '#0F172A',
