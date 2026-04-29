@@ -207,6 +207,7 @@ export default function ProfileScreen() {
       return;
     }
     Alert.alert('Account', undefined, [
+      { text: 'Import / Export (Hevy CSV)', onPress: () => router.push('/profile/import-export') },
       { text: 'Edit training profile', onPress: () => router.push('/(auth)/onboarding/goal') },
       { text: 'Sign out', style: 'destructive', onPress: signOutRun },
       { text: 'Cancel', style: 'cancel' },
@@ -332,6 +333,23 @@ export default function ProfileScreen() {
             ))}
           </View>
         </SRCard>
+
+        {/* Data & import */}
+        <Text style={[s.sectionKicker, { marginTop: 8 }]}>Data</Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => router.push('/profile/import-export')}
+          style={s.dataCard}
+        >
+          <View style={s.dataCardInner}>
+            <Ionicons name="swap-horizontal-outline" size={22} color={COLORS.blue} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.dataCardTitle}>Import / Export</Text>
+              <Text style={s.dataCardSub}>Hevy workout CSV → import past sessions</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
+          </View>
+        </TouchableOpacity>
 
         {/* Dashboard */}
         <Text style={s.sectionKicker}>Dashboard</Text>
@@ -679,6 +697,23 @@ const s = StyleSheet.create({
     marginLeft: 6,
     textTransform: 'uppercase',
   },
+  dataCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    marginBottom: 10,
+    marginHorizontal: 2,
+  },
+  dataCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  dataCardTitle: { fontSize: 15, fontWeight: '800', color: COLORS.ink },
+  dataCardSub: { fontSize: 12, color: COLORS.ink3, marginTop: 3 },
   dashGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   dashTile: {
     width: '48%',

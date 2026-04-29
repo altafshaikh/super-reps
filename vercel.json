@@ -4,5 +4,11 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "functions": {
+    "api/hevy-routine.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }

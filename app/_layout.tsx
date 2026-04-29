@@ -38,6 +38,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="routines" />
+        <Stack.Screen name="profile" />
         <Stack.Screen name="workout" />
         <Stack.Screen name="log" />
       </Stack>

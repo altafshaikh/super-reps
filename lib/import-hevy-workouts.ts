@@ -27,7 +27,7 @@ export type ImportHevyProgress = {
   phase: 'checking' | 'building_sets' | 'inserting_sets';
 };
 
-type ExerciseRow = { id: string; name: string; slug: string };
+export type ExerciseRow = { id: string; name: string; slug: string };
 
 /** Hevy-style export: one row per set (see Hevy Settings → Export). */
 export function validateHevyCsvHeader(headers: string[]): { ok: boolean; message?: string } {
@@ -433,7 +433,7 @@ function buildSessions(grid: string[][]): ParsedSession[] {
   return sessions;
 }
 
-async function ensureExerciseId(
+export async function ensureExerciseId(
   supabase: SupabaseClient,
   userId: string,
   title: string,

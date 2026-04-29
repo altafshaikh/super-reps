@@ -18,7 +18,9 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@hookform/resolvers": "^5.2.2",
+    "@sparticuz/chromium": "^131.0.1",
     "@supabase/supabase-js": "^2.104.1",
+    "@vercel/node": "^5.7.13",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.33",
     "expo-clipboard": "~8.0.8",
@@ -31,6 +33,7 @@
     "expo-status-bar": "~3.0.9",
     "groq-sdk": "^1.1.2",
     "nativewind": "^4.2.3",
+    "puppeteer-core": "^24.42.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.73.1",

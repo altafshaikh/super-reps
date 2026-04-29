@@ -45,7 +45,7 @@ export default function RoutinesScreen() {
         <View className="flex-row gap-2">
           <TouchableOpacity
             className="flex-1 bg-surface-card border border-surface-border rounded-xl py-3 px-2 flex-row items-center justify-center gap-2"
-            onPress={() => router.push('/routines/import-hevy')}
+            onPress={() => router.push('/routines/import-hevy-link')}
             activeOpacity={0.85}
           >
             <Ionicons name="download-outline" size={18} color={COLORS.primary} />
@@ -77,12 +77,12 @@ export default function RoutinesScreen() {
               <Text className="text-4xl mb-4">📋</Text>
               <Text className="text-white font-semibold text-lg text-center">No routines yet</Text>
               <Text className="text-white/50 text-sm text-center mt-2 mb-6 px-4">
-                Import a Hevy CSV or let AI build your first programme
+                Import a routine from Hevy or let AI build your first programme
               </Text>
               <View className="flex-row gap-3 w-full max-w-sm px-2">
                 <TouchableOpacity
                   className="flex-1 bg-surface-card border border-surface-border rounded-xl py-3 flex-row items-center justify-center gap-2"
-                  onPress={() => router.push('/routines/import-hevy')}
+                  onPress={() => router.push('/routines/import-hevy-link')}
                 >
                   <Ionicons name="download-outline" size={18} color={COLORS.primary} />
                   <Text className="text-white font-bold text-sm">Import</Text>

@@ -184,7 +184,7 @@ export default function WorkoutsScreen() {
 
             <TouchableOpacity
               style={s.cardImport}
-              onPress={() => router.push('/routines/import-hevy')}
+              onPress={() => router.push('/routines/import-hevy-link')}
               activeOpacity={0.85}
             >
               <Ionicons name="download-outline" size={20} color={COLORS.ink} style={{ marginRight: 10 }} />
