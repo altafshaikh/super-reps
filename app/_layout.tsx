@@ -39,6 +39,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="routines" />
         <Stack.Screen name="workout" />
+        <Stack.Screen name="log" />
       </Stack>
     </GestureHandlerRootView>
   );
