@@ -12,6 +12,21 @@ export interface ImportHevyResult {
   warnings: string[];
 }
 
+/** Fired while importing (fraction moves at session boundaries; phase text updates within a session). */
+export type ImportHevyProgress = {
+  totalSessions: number;
+  /** 1-based index of the workout currently being processed */
+  currentSession: number;
+  /** 0–1, roughly “share of workouts processed” */
+  fraction: number;
+  sessionsImported: number;
+  sessionsSkipped: number;
+  setsWritten: number;
+  customExercisesCreated: number;
+  currentTitle: string;
+  phase: 'checking' | 'building_sets' | 'inserting_sets';
+};
+
 type ExerciseRow = { id: string; name: string; slug: string };
 
 /** Hevy-style export: one row per set (see Hevy Settings → Export). */
@@ -468,6 +483,7 @@ export async function importHevyCsvWorkouts(
   userId: string,
   csvText: string,
   catalog: ExerciseRow[],
+  onProgress?: (p: ImportHevyProgress) => void,
 ): Promise<ImportHevyResult> {
   const warnings: string[] = [];
   const grid = parseGrid(csvText);
@@ -501,8 +517,23 @@ export async function importHevyCsvWorkouts(
   let setsWritten = 0;
 
   const cat = [...catalog];
+  const totalSessions = sessions.length;
+  const frac = (done: number) => (totalSessions > 0 ? Math.min(1, done / totalSessions) : 1);
 
-  for (const session of sessions) {
+  for (let si = 0; si < sessions.length; si++) {
+    const session = sessions[si]!;
+    onProgress?.({
+      totalSessions,
+      currentSession: si + 1,
+      fraction: frac(si),
+      sessionsImported,
+      sessionsSkipped,
+      setsWritten,
+      customExercisesCreated: customs.created,
+      currentTitle: session.title,
+      phase: 'checking',
+    });
+
     const startedIso = session.startedAt.toISOString();
     const { data: dup } = await supabase
       .from('workout_sessions')
@@ -514,6 +545,17 @@ export async function importHevyCsvWorkouts(
 
     if (dup?.id) {
       sessionsSkipped++;
+      onProgress?.({
+        totalSessions,
+        currentSession: si + 1,
+        fraction: frac(si + 1),
+        sessionsImported,
+        sessionsSkipped,
+        setsWritten,
+        customExercisesCreated: customs.created,
+        currentTitle: session.title,
+        phase: 'checking',
+      });
       continue;
     }
 
@@ -537,6 +579,18 @@ export async function importHevyCsvWorkouts(
       notes: string | null;
       completed_at: string;
     }[] = [];
+
+    onProgress?.({
+      totalSessions,
+      currentSession: si + 1,
+      fraction: frac(si),
+      sessionsImported,
+      sessionsSkipped,
+      setsWritten,
+      customExercisesCreated: customs.created,
+      currentTitle: session.title,
+      phase: 'building_sets',
+    });
 
     for (const s of session.sets) {
       const exId = await ensureExerciseId(supabase, userId, s.exerciseTitle, cat, exerciseCache, customs);
@@ -562,6 +616,17 @@ export async function importHevyCsvWorkouts(
 
     if (setRows.length === 0) {
       warnings.push(`Skipped workout “${session.title}” (${startedIso}): no mappable sets.`);
+      onProgress?.({
+        totalSessions,
+        currentSession: si + 1,
+        fraction: frac(si + 1),
+        sessionsImported,
+        sessionsSkipped,
+        setsWritten,
+        customExercisesCreated: customs.created,
+        currentTitle: session.title,
+        phase: 'checking',
+      });
       continue;
     }
 
@@ -579,12 +644,34 @@ export async function importHevyCsvWorkouts(
 
     if (sessErr) {
       warnings.push(`Workout “${session.title}”: ${sessErr.message}`);
+      onProgress?.({
+        totalSessions,
+        currentSession: si + 1,
+        fraction: frac(si + 1),
+        sessionsImported,
+        sessionsSkipped,
+        setsWritten,
+        customExercisesCreated: customs.created,
+        currentTitle: session.title,
+        phase: 'checking',
+      });
       continue;
     }
 
     const chunk = 80;
     let setsOk = true;
     for (let i = 0; i < setRows.length; i += chunk) {
+      onProgress?.({
+        totalSessions,
+        currentSession: si + 1,
+        fraction: frac(si),
+        sessionsImported,
+        sessionsSkipped,
+        setsWritten,
+        customExercisesCreated: customs.created,
+        currentTitle: session.title,
+        phase: 'inserting_sets',
+      });
       const slice = setRows.slice(i, i + chunk);
       const { error: setErr } = await supabase.from('workout_sets').insert(slice);
       if (setErr) {
@@ -596,11 +683,33 @@ export async function importHevyCsvWorkouts(
 
     if (!setsOk) {
       await supabase.from('workout_sessions').delete().eq('id', sessionId);
+      onProgress?.({
+        totalSessions,
+        currentSession: si + 1,
+        fraction: frac(si + 1),
+        sessionsImported,
+        sessionsSkipped,
+        setsWritten,
+        customExercisesCreated: customs.created,
+        currentTitle: session.title,
+        phase: 'checking',
+      });
       continue;
     }
 
     sessionsImported++;
     setsWritten += setRows.length;
+    onProgress?.({
+      totalSessions,
+      currentSession: si + 1,
+      fraction: frac(si + 1),
+      sessionsImported,
+      sessionsSkipped,
+      setsWritten,
+      customExercisesCreated: customs.created,
+      currentTitle: session.title,
+      phase: 'checking',
+    });
   }
 
   return {

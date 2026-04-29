@@ -20,7 +20,21 @@ import {
   previewHevyCsv,
   importHevyCsvWorkouts,
   type HevyPreview,
+  type ImportHevyProgress,
 } from '@/lib/import-hevy-workouts';
+
+function hevyImportPhaseLabel(phase: ImportHevyProgress['phase']): string {
+  switch (phase) {
+    case 'checking':
+      return 'Checking for existing workout…';
+    case 'building_sets':
+      return 'Resolving exercises and building sets…';
+    case 'inserting_sets':
+      return 'Saving sets to the database…';
+    default:
+      return '';
+  }
+}
 
 function pickCsvFileWeb(onRead: (text: string) => void) {
   if (typeof document === 'undefined') return;
@@ -47,6 +61,7 @@ export default function ImportHevyScreen() {
   const [preview, setPreview] = useState<HevyPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportHevyProgress | null>(null);
 
   const runPreview = useCallback((text: string) => {
     setCsvText(text);
@@ -76,6 +91,7 @@ export default function ImportHevyScreen() {
   const handleImport = async () => {
     if (!user || !csvText.trim()) return;
     setImporting(true);
+    setImportProgress(null);
     try {
       const { data: exercises, error: exErr } = await supabase
         .from('exercises')
@@ -87,7 +103,13 @@ export default function ImportHevyScreen() {
         name: e.name as string,
         slug: e.slug as string,
       }));
-      const result = await importHevyCsvWorkouts(supabase, user.id, csvText, catalog);
+      const result = await importHevyCsvWorkouts(
+        supabase,
+        user.id,
+        csvText,
+        catalog,
+        (p) => setImportProgress(p),
+      );
       const lines = [
         `Workouts imported: ${result.sessionsImported}`,
         `Skipped (already in SuperReps): ${result.sessionsSkipped}`,
@@ -100,8 +122,10 @@ export default function ImportHevyScreen() {
       ]);
     } catch (e) {
       Alert.alert('Import failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
     }
-    setImporting(false);
   };
 
   return (
@@ -182,6 +206,38 @@ export default function ImportHevyScreen() {
             <Text className="text-white/80 text-sm">Workouts: {preview.sessionCount}</Text>
             <Text className="text-white/80 text-sm">Sets (rows): {preview.setCount}</Text>
             <Text className="text-white/80 text-sm">Date range: {preview.dateRangeLabel}</Text>
+          </View>
+        ) : null}
+
+        {importing && !importProgress ? (
+          <View className="bg-surface-card border border-surface-border rounded-xl p-4 mb-4 flex-row items-center gap-3">
+            <ActivityIndicator color={COLORS.primary} />
+            <Text className="text-white/70 text-sm flex-1">Loading exercise catalog…</Text>
+          </View>
+        ) : null}
+
+        {importing && importProgress ? (
+          <View className="bg-surface-card border border-surface-border rounded-xl p-4 mb-4">
+            <Text className="text-white font-semibold text-sm mb-1">
+              Workout {importProgress.currentSession} of {importProgress.totalSessions}
+            </Text>
+            <Text className="text-white/70 text-xs mb-2" numberOfLines={2}>
+              {importProgress.currentTitle}
+            </Text>
+            <Text className="text-white/45 text-xs mb-3">{hevyImportPhaseLabel(importProgress.phase)}</Text>
+            <View className="h-2 rounded-full bg-white/10 overflow-hidden mb-3">
+              <View
+                className="h-2 rounded-full bg-brand-600"
+                style={{ width: `${Math.round(importProgress.fraction * 100)}%` }}
+              />
+            </View>
+            <Text className="text-white/50 text-xs">
+              Imported {importProgress.sessionsImported} · Skipped {importProgress.sessionsSkipped} · Sets{' '}
+              {importProgress.setsWritten}
+              {importProgress.customExercisesCreated > 0
+                ? ` · New exercises ${importProgress.customExercisesCreated}`
+                : ''}
+            </Text>
           </View>
         ) : null}
 

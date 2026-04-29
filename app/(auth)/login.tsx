@@ -1,26 +1,117 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator, Alert, StyleSheet, StatusBar,
+  Platform, ScrollView, ActivityIndicator, StyleSheet, StatusBar,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { isValidEmail } from '@/lib/validation';
 import { COLORS } from '@/constants';
+
+type LoginErrors = { email: string; password: string; form: string };
+
+/** Map Supabase Auth errors to inline fields (avoid generic alerts on web). */
+function mapSignInError(raw: string): LoginErrors {
+  const empty: LoginErrors = { email: '', password: '', form: '' };
+  const lower = raw.toLowerCase();
+
+  if (
+    lower.includes('email not confirmed')
+    || lower.includes('email address not confirmed')
+    || lower.includes('not verified')
+  ) {
+    return {
+      ...empty,
+      form: 'Confirm your email before signing in. Check your inbox for the link.',
+    };
+  }
+
+  if (
+    lower.includes('invalid login credentials')
+    || lower.includes('invalid credentials')
+    || lower.includes('wrong password')
+    || lower.includes('incorrect password')
+  ) {
+    return {
+      ...empty,
+      form: 'Invalid email or password.',
+    };
+  }
+
+  if (
+    lower.includes('too many requests')
+    || lower.includes('too many')
+    || lower.includes('rate limit')
+    || lower.includes('429')
+  ) {
+    return {
+      ...empty,
+      form: 'Too many sign-in attempts. Wait a minute and try again.',
+    };
+  }
+
+  if (lower.includes('network') || lower.includes('fetch failed') || lower.includes('failed to fetch')) {
+    return {
+      ...empty,
+      form: 'Network error. Check your connection and try again.',
+    };
+  }
+
+  if (lower.includes('email') && (lower.includes('invalid') || lower.includes('format'))) {
+    return {
+      ...empty,
+      email: raw || 'Enter a valid email address.',
+    };
+  }
+
+  return {
+    ...empty,
+    form: raw || 'Could not sign in. Try again.',
+  };
+}
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<LoginErrors>({
+    email: '',
+    password: '',
+    form: '',
+  });
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Missing fields', 'Please enter your email and password.');
+    const cleanEmail = email.trim().toLowerCase();
+    setErrors({ email: '', password: '', form: '' });
+
+    if (!cleanEmail || !password) {
+      setErrors({
+        email: '',
+        password: '',
+        form: 'Please enter your email and password.',
+      });
       return;
     }
+
+    if (!isValidEmail(cleanEmail)) {
+      setErrors({
+        email: 'Enter a valid email address (e.g. you@example.com).',
+        password: '',
+        form: '',
+      });
+      return;
+    }
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
     setLoading(false);
-    if (error) Alert.alert('Login failed', error.message);
+
+    if (error) {
+      setErrors(mapSignInError(error.message ?? ''));
+    }
   };
 
   return (
@@ -28,38 +119,56 @@ export default function LoginScreen() {
       <StatusBar barStyle="light-content" />
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <View style={s.container}>
-          {/* Logo */}
           <View style={s.logoBlock}>
             <Text style={s.appName}>SuperReps</Text>
             <Text style={s.tagline}>AI-powered workout tracker</Text>
           </View>
 
-          {/* Form */}
           <View style={s.form}>
+            {!!errors.form && <Text style={s.formError}>{errors.form}</Text>}
             <View>
               <Text style={s.fieldLabel}>Email</Text>
               <TextInput
-                style={s.input}
+                style={[s.input, errors.email ? s.inputError : null]}
                 placeholder="you@example.com"
                 placeholderTextColor={COLORS.ink3}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => {
+                  setEmail(t);
+                  setErrors((e) => ({
+                    ...e,
+                    form: '',
+                    ...(e.email ? { email: '' } : {}),
+                  }));
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
               />
+              {!!errors.email && <Text style={s.fieldError}>{errors.email}</Text>}
             </View>
             <View>
               <Text style={s.fieldLabel}>Password</Text>
               <TextInput
-                style={s.input}
+                style={[s.input, errors.password ? s.inputError : null]}
                 placeholder="••••••••"
                 placeholderTextColor={COLORS.ink3}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => {
+                  setPassword(t);
+                  setErrors((e) => ({
+                    ...e,
+                    form: '',
+                    ...(e.password ? { password: '' } : {}),
+                  }));
+                }}
                 secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
                 autoComplete="current-password"
+                textContentType="password"
               />
+              {!!errors.password && <Text style={s.fieldError}>{errors.password}</Text>}
             </View>
             <TouchableOpacity style={s.primaryBtn} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
               {loading ? <ActivityIndicator color={COLORS.bg} /> : (
@@ -88,12 +197,15 @@ const s = StyleSheet.create({
   appName: { fontSize: 40, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
   tagline: { color: COLORS.ink3, marginTop: 6, fontSize: 15 },
   form: { gap: 16 },
+  formError: { color: COLORS.red, fontSize: 14, lineHeight: 20, marginBottom: 4 },
+  fieldError: { color: COLORS.red, fontSize: 13, marginTop: 6, lineHeight: 18 },
   fieldLabel: { color: COLORS.ink2, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   input: {
     backgroundColor: COLORS.surface, borderWidth: 0.5, borderColor: COLORS.borderMid,
     borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
     fontSize: 15, color: COLORS.ink,
   },
+  inputError: { borderColor: COLORS.red, borderWidth: 1 },
   primaryBtn: {
     backgroundColor: COLORS.ink, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', marginTop: 4,
