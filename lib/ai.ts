@@ -145,11 +145,12 @@ export async function getWeeklyReview(
     messages: [
       {
         role: 'system',
-        content: 'You are a personal trainer giving a weekly training review. Be encouraging and specific. Use markdown.',
+        content:
+          'You are a personal trainer. Respond with plain text only — no markdown, no bullet symbols, no headings. At most 3 short sentences for a mobile app card.',
       },
       {
         role: 'user',
-        content: `Review this past week of training:\n${summary}\n\nProvide: 1) What went well 2) What to focus on next week 3) One specific recommendation.`,
+        content: `Past week of training:\n${summary}\n\nGive one concise weekly takeaway: volume trend, progression, and one actionable tip (rest or next session).`,
       },
     ],
   });

@@ -321,7 +321,7 @@ export default function ProfileScreen() {
         <View style={s.dashGrid}>
           {[
             { icon: 'analytics-outline' as const, label: 'Statistics', onPress: () => Alert.alert('Statistics', 'Use the chart above to compare duration, volume, and reps by week.') },
-            { icon: 'barbell' as const, label: 'Exercises', onPress: () => router.push('/(tabs)/log') },
+            { icon: 'barbell' as const, label: 'Exercises', onPress: () => router.push('/(tabs)/workouts') },
             { icon: 'body' as const, label: 'Measures', onPress: () => Alert.alert('Measures', 'Body measurements coming soon.') },
             { icon: 'calendar' as const, label: 'Calendar', onPress: () => Alert.alert('Calendar', 'Training calendar coming soon.') },
           ].map(tile => (
@@ -354,7 +354,7 @@ export default function ProfileScreen() {
           <Text style={s.muted}>Loading…</Text>
         ) : sessions.length === 0 ? (
           <SRCard>
-            <Text style={s.muted}>No workouts logged yet. Start one from the Log tab.</Text>
+            <Text style={s.muted}>No workouts logged yet. Start one from the Workouts tab.</Text>
           </SRCard>
         ) : (
           sessions.map(session => {

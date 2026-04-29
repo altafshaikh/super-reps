@@ -72,7 +72,7 @@ export default function AITab() {
       clearBuilder();
       setPrompt('');
       Alert.alert('Saved!', `"${pendingRoutine.name}" added to your routines.`, [
-        { text: 'Go to Log', onPress: () => router.push('/(tabs)/log') },
+        { text: 'Go to Workouts', onPress: () => router.push('/(tabs)/workouts') },
         { text: 'OK' },
       ]);
     } catch {

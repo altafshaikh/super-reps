@@ -7,6 +7,24 @@ export function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+/** Compact clock for summaries, e.g. `05:32` or `1:05:02`. */
+export function formatDurationClock(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** Volume label like `4.8k kg` or `842 kg`. */
+export function formatVolumeDisplay(kg: number): string {
+  if (kg >= 1000) return `${(kg / 1000).toFixed(1)}k kg`;
+  if (kg >= 100) return `${Math.round(kg)} kg`;
+  return `${Math.round(kg * 10) / 10} kg`;
+}
+
 export function formatWeight(kg: number): string {
   return kg % 1 === 0 ? `${kg}` : kg.toFixed(1);
 }

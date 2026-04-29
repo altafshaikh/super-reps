@@ -11,6 +11,7 @@ import { useUserStore } from '@/stores/userStore';
 import { supabase } from '@/lib/supabase';
 import { getCoachAdvice } from '@/lib/ai';
 import { formatDuration, formatWeight } from '@/lib/utils';
+import { fetchHistoricalMaxWeightByExercise, findBestSessionPR } from '@/lib/workout-pr';
 import { COLORS, REST_TIMES } from '@/constants';
 import type { Exercise, ActiveSet } from '@/types';
 
@@ -75,7 +76,7 @@ export default function ActiveWorkoutScreen() {
   const discardWorkout = useCallback(() => {
     resetWorkout();
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/log');
+    else router.replace('/(tabs)/workouts');
   }, [resetWorkout, router]);
 
   const confirmDiscard = useCallback(() => {
@@ -163,6 +164,10 @@ export default function ActiveWorkoutScreen() {
     const now = new Date();
     const duration = Math.floor((now.getTime() - sa.getTime()) / 1000);
 
+    const exerciseIds = [...new Set(exs.map(e => e.exercise.id))];
+    const historicalMax = await fetchHistoricalMaxWeightByExercise(user.id, exerciseIds);
+    const sessionPR = findBestSessionPR(exs, historicalMax);
+
     let volumeTotal = 0;
     const setsToInsert: any[] = [];
     for (const ex of exs) {
@@ -216,7 +221,24 @@ export default function ActiveWorkoutScreen() {
     }
 
     resetWorkout();
-    router.replace('/workout/complete');
+
+    const routineTitle = useWorkoutStore.getState().routineName ?? 'Quick Workout';
+    router.replace({
+      pathname: '/workout/complete',
+      params: {
+        routineName: encodeURIComponent(routineTitle),
+        durationSec: String(duration),
+        setCount: String(setsToInsert.length),
+        volumeKg: String(Math.round(volumeTotal)),
+        ...(sessionPR
+          ? {
+              prExercise: encodeURIComponent(sessionPR.exerciseName),
+              prWeight: String(sessionPR.weightKg),
+              prDelta: String(sessionPR.improvementKg),
+            }
+          : {}),
+      },
+    });
   };
 
   const fetchExercises = useCallback(async (q: string) => {

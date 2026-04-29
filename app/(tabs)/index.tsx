@@ -132,7 +132,7 @@ export default function HomeScreen() {
                   <Text style={s.startTitle}>Start Workout</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => router.push('/(tabs)/log')}
+                  onPress={() => router.push('/(tabs)/workouts')}
                   style={s.startBtn}
                   activeOpacity={0.85}
                 >

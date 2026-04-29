@@ -71,7 +71,7 @@ function IconProfile({ active }: { active: boolean }) {
 
 const TABS = [
   { id: 'index',    label: 'Home',     Icon: IconHome },
-  { id: 'log',      label: 'Log',      Icon: IconLog },
+  { id: 'workouts', label: 'Workouts', Icon: IconLog },
   { id: 'ai',       label: 'AI',       Icon: IconAI },
   { id: 'profile',  label: 'Profile',  Icon: IconProfile },
 ];
