@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
@@ -11,6 +12,14 @@ import { formatDuration, timeAgo } from '@/lib/utils';
 import { COLORS } from '@/constants';
 import { SRCard, SRMetric, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
 
+const DASHBOARD_SESSION_LIMIT = 500;
+
+function sessionRepsFromSets(s: WorkoutSession & { sets?: { reps: number }[] }): number {
+  const sets = s.sets;
+  if (!sets?.length) return 0;
+  return sets.reduce((a, row) => a + Number(row.reps ?? 0), 0);
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useUserStore();
@@ -19,19 +28,16 @@ export default function HomeScreen() {
   const [streak, setStreak] = useState(0);
   const [weeklyVol, setWeeklyVol] = useState(0);
 
-  useEffect(() => {
+  const fetchDashboard = useCallback(async () => {
     if (!user) return;
-    fetchDashboard();
-  }, [user]);
-
-  const fetchDashboard = async () => {
     const { data } = await supabase
       .from('workout_sessions')
-      .select('*')
-      .eq('user_id', user!.id)
+      .select('*, sets:workout_sets(reps)')
+      .eq('user_id', user.id)
+      .is('deleted_at', null)
       .not('finished_at', 'is', null)
       .order('started_at', { ascending: false })
-      .limit(10);
+      .limit(DASHBOARD_SESSION_LIMIT);
 
     if (data) {
       setRecentSessions(data as WorkoutSession[]);
@@ -42,7 +48,13 @@ export default function HomeScreen() {
         .reduce((sum, s) => sum + (s.volume_total ?? 0), 0);
       setWeeklyVol(weekVol);
     }
-  };
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchDashboard();
+    }, [fetchDashboard]),
+  );
 
   const calcStreak = (sessions: WorkoutSession[]): number => {
     if (!sessions.length) return 0;
@@ -150,7 +162,9 @@ export default function HomeScreen() {
                 <Text style={s.emptyText}>No workouts yet — start one above</Text>
               </View>
             ) : (
-              recentSessions.slice(0, 5).map((session, i) => (
+              recentSessions.slice(0, 5).map((session, i) => {
+                const reps = sessionRepsFromSets(session as WorkoutSession & { sets?: { reps: number }[] });
+                return (
                 <View key={session.id}>
                   {i > 0 && <SRDivider indent={20} />}
                   <View style={s.sessionRow}>
@@ -158,6 +172,7 @@ export default function HomeScreen() {
                       <Text style={s.sessionName}>{session.routine_name ?? 'Quick Workout'}</Text>
                       <Text style={s.sessionMeta}>
                         {timeAgo(session.started_at)} · {formatDuration(session.duration_seconds ?? 0)}
+                        {reps > 0 ? ` · ${reps} reps` : ''}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
@@ -170,7 +185,8 @@ export default function HomeScreen() {
                     </View>
                   </View>
                 </View>
-              ))
+                );
+              })
             )}
           </SRCard>
         </View>

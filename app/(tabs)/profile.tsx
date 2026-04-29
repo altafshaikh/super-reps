@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Share,
   Dimensions,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -90,6 +91,13 @@ function groupExercises(sets: SetRow[] | undefined) {
   return [...by.values()];
 }
 
+function sessionTotalReps(sets: SetRow[] | undefined): number {
+  if (!sets?.length) return 0;
+  return sets.reduce((a, st) => a + Number(st.reps ?? 0), 0);
+}
+
+const PROFILE_SESSION_LIMIT = 500;
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, signOut } = useUserStore();
@@ -110,7 +118,7 @@ export default function ProfileScreen() {
         .is('deleted_at', null)
         .not('finished_at', 'is', null)
         .order('started_at', { ascending: false })
-        .limit(50),
+        .limit(PROFILE_SESSION_LIMIT),
       supabase
         .from('personal_records')
         .select('*')
@@ -123,9 +131,11 @@ export default function ProfileScreen() {
     setLoading(false);
   }, [user]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const handle = user?.username ?? user?.email?.split('@')[0] ?? 'lifter';
   const displayName = user?.username
@@ -141,9 +151,16 @@ export default function ProfileScreen() {
     return m;
   }, [prs]);
 
+  const chartWeeks = useMemo(() => {
+    if (sessions.length === 0) return 12;
+    const oldest = new Date(sessions[sessions.length - 1].started_at).getTime();
+    const spanDays = Math.max(1, (Date.now() - oldest) / 86400000);
+    return Math.min(104, Math.max(12, Math.ceil(spanDays / 7) + 1));
+  }, [sessions]);
+
   const weeklyData = useMemo(
-    () => weeklyBars(sessions, 12, chartMetric),
-    [sessions, chartMetric],
+    () => weeklyBars(sessions, chartWeeks, chartMetric),
+    [sessions, chartWeeks, chartMetric],
   );
   const maxBar = Math.max(...weeklyData.map(d => d.value), chartMetric === 'duration' ? 0.25 : 1);
 
@@ -280,7 +297,7 @@ export default function ProfileScreen() {
             <Text style={s.chartSub} numberOfLines={2}>
               {chartSubtitle}
             </Text>
-            <Text style={s.chartRange}>Last 12 weeks</Text>
+            <Text style={s.chartRange}>Last {chartWeeks} weeks</Text>
           </View>
           <View style={[s.chartArea, { paddingHorizontal: Math.max(8, (screenW - 28) * 0.02) }]}>
             {weeklyData.map((d, i) => {
@@ -359,6 +376,7 @@ export default function ProfileScreen() {
         ) : (
           sessions.map(session => {
             const title = session.routine_name ?? 'Quick Workout';
+            const totalReps = sessionTotalReps(session.sets);
             const groups = groupExercises(session.sets);
             const preview = groups.slice(0, 3);
             const more = Math.max(0, groups.length - preview.length);
@@ -390,7 +408,11 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                   <View style={s.cardStat}>
-                    <Text style={s.cardStatLab}>Records</Text>
+                    <Text style={s.cardStatLab}>Reps</Text>
+                    <Text style={s.cardStatVal}>{totalReps.toLocaleString('en-US')}</Text>
+                  </View>
+                  <View style={s.cardStat}>
+                    <Text style={s.cardStatLab}>PRs</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       <Text style={{ fontSize: 14 }}>🏅</Text>
                       <Text style={s.cardStatVal}>{rec}</Text>
