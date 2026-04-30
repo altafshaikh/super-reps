@@ -17,18 +17,14 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
-import { COLORS, GOAL_OPTIONS, LEVEL_OPTIONS } from '@/constants';
-import type { Plan, WorkoutSession, SetLog, PersonalRecord } from '@/types';
-import { SRCard, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
+import { COLORS } from '@/constants';
+import type { WorkoutSession, SetLog, PersonalRecord } from '@/types';
+import { SRCard, SRDivider, SRSectionLabel } from '@/components/ui';
 import { formatWeight, timeAgo } from '@/lib/utils';
+import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
 
 type SetRow = SetLog & { exercise?: { name: string } | null };
 type SessionRow = WorkoutSession & { sets?: SetRow[] };
-
-function planLabel(plan: Plan | undefined) {
-  const p = plan ?? 'free';
-  return `${p.charAt(0).toUpperCase() + p.slice(1)} plan`;
-}
 
 function formatLongDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -100,9 +96,12 @@ const PROFILE_SESSION_LIMIT = 500;
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, signOut } = useUserStore();
+  const { user } = useUserStore();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [prs, setPrs] = useState<PersonalRecord[]>([]);
+  const [prDerived, setPrDerived] = useState<{
+    bests: PersonalRecord[];
+    prCountBySession: Map<string, number>;
+  }>({ bests: [], prCountBySession: new Map() });
   const [chartMetric, setChartMetric] = useState<'duration' | 'volume' | 'reps'>('duration');
   const [menuSession, setMenuSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,7 +109,7 @@ export default function ProfileScreen() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [sessRes, prRes] = await Promise.all([
+    const [sessRes, flatSets] = await Promise.all([
       supabase
         .from('workout_sessions')
         .select('*, sets:workout_sets(*, exercise:exercises(name))')
@@ -119,15 +118,10 @@ export default function ProfileScreen() {
         .not('finished_at', 'is', null)
         .order('started_at', { ascending: false })
         .limit(PROFILE_SESSION_LIMIT),
-      supabase
-        .from('personal_records')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('achieved_at', { ascending: false })
-        .limit(20),
+      fetchAllSetsForPersonalBests(supabase, user.id),
     ]);
     if (sessRes.data) setSessions(sessRes.data as SessionRow[]);
-    if (prRes.data) setPrs(prRes.data as PersonalRecord[]);
+    setPrDerived(derivePersonalBestsFromFlatRows(flatSets));
     setLoading(false);
   }, [user]);
 
@@ -143,13 +137,7 @@ export default function ProfileScreen() {
     : (user?.email?.split('@')[0] ?? 'Lifter');
   const initial = displayName[0]?.toUpperCase() ?? 'U';
 
-  const prCountBySession = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of prs) {
-      if (p.session_id) m.set(p.session_id, (m.get(p.session_id) ?? 0) + 1);
-    }
-    return m;
-  }, [prs]);
+  const prCountBySession = prDerived.prCountBySession;
 
   const chartWeeks = useMemo(() => {
     if (sessions.length === 0) return 12;
@@ -163,56 +151,6 @@ export default function ProfileScreen() {
     [sessions, chartWeeks, chartMetric],
   );
   const maxBar = Math.max(...weeklyData.map(d => d.value), chartMetric === 'duration' ? 0.25 : 1);
-
-  const goalLabel = GOAL_OPTIONS.find(g => g.value === user?.goal)?.label ?? 'Not set';
-  const levelLabel = LEVEL_OPTIONS.find(l => l.value === user?.level)?.label ?? 'Not set';
-  const equipmentLabel = (user?.equipment ?? []).join(', ') || 'Not set';
-  const plan = user?.plan ?? 'free';
-
-  const trainingRows: {
-    label: string;
-    value: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    href: '/(auth)/onboarding/goal' | '/(auth)/onboarding/level' | '/(auth)/onboarding/equipment';
-  }[] = [
-    { label: 'Goal', value: goalLabel, icon: 'flag-outline', href: '/(auth)/onboarding/goal' },
-    { label: 'Level', value: levelLabel, icon: 'barbell-outline', href: '/(auth)/onboarding/level' },
-    {
-      label: 'Equipment',
-      value: equipmentLabel,
-      icon: 'hardware-chip-outline',
-      href: '/(auth)/onboarding/equipment',
-    },
-  ];
-
-  const signOutRun = () => {
-    void signOut();
-  };
-
-  const handleSignOut = () => {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm('Sign out?')) signOutRun();
-      return;
-    }
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOutRun },
-    ]);
-  };
-
-  const openSettings = () => {
-    if (Platform.OS === 'web') {
-      const go = typeof window !== 'undefined' && window.confirm('Open training profile editor?');
-      if (go) router.push('/(auth)/onboarding/goal');
-      return;
-    }
-    Alert.alert('Account', undefined, [
-      { text: 'Import / Export (Hevy CSV)', onPress: () => router.push('/profile/import-export') },
-      { text: 'Edit training profile', onPress: () => router.push('/(auth)/onboarding/goal') },
-      { text: 'Sign out', style: 'destructive', onPress: signOutRun },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
 
   const shareProfile = async () => {
     try {
@@ -254,13 +192,13 @@ export default function ProfileScreen() {
             {handle}
           </Text>
           <View style={s.topIcons}>
-            <TouchableOpacity onPress={() => router.push('/(auth)/onboarding/goal')} hitSlop={hitSlop}>
+            <TouchableOpacity onPress={() => router.push('/profile/settings')} hitSlop={hitSlop}>
               <Ionicons name="create-outline" size={22} color={COLORS.ink} />
             </TouchableOpacity>
             <TouchableOpacity onPress={shareProfile} hitSlop={hitSlop}>
               <Ionicons name="share-outline" size={22} color={COLORS.ink} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={openSettings} hitSlop={hitSlop}>
+            <TouchableOpacity onPress={() => router.push('/profile/settings')} hitSlop={hitSlop}>
               <Ionicons name="settings-outline" size={22} color={COLORS.ink} />
             </TouchableOpacity>
           </View>
@@ -368,10 +306,10 @@ export default function ProfileScreen() {
         </View>
 
         {/* PRs strip */}
-        {prs.length > 0 ? (
+        {prDerived.bests.length > 0 ? (
           <SRCard style={{ marginTop: 12 }}>
             <SRSectionLabel>Personal records</SRSectionLabel>
-            {prs.slice(0, 5).map((pr, i) => (
+            {prDerived.bests.slice(0, 5).map((pr, i) => (
               <View key={pr.id}>
                 {i > 0 && <SRDivider indent={20} />}
                 <View style={s.prRow}>
@@ -476,61 +414,6 @@ export default function ProfileScreen() {
           })
         )}
 
-        {/* Training + app */}
-        <SRCard style={{ marginTop: 8 }}>
-          <SRSectionLabel action="Edit" onAction={() => router.push('/(auth)/onboarding/goal')}>
-            Training profile
-          </SRSectionLabel>
-          {trainingRows.map((row, i) => (
-            <View key={row.label}>
-              {i > 0 && <SRDivider indent={20} />}
-              <TouchableOpacity
-                style={s.tapRow}
-                onPress={() => router.push(row.href)}
-                activeOpacity={0.65}
-              >
-                <View style={s.tapLeft}>
-                  <View style={s.iconWrap}>
-                    <Ionicons name={row.icon} size={20} color={COLORS.blue} />
-                  </View>
-                  <Text style={s.tapLab}>{row.label}</Text>
-                </View>
-                <View style={s.tapRight}>
-                  <Text style={s.tapVal} numberOfLines={1}>
-                    {row.value}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={18} color={COLORS.ink3} />
-                </View>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </SRCard>
-
-        <SRCard>
-          <SRSectionLabel>About this app</SRSectionLabel>
-          <View style={s.staticRow}>
-            <Text style={s.tapLab}>Version</Text>
-            <Text style={s.muted}>1.0.0</Text>
-          </View>
-          <SRDivider indent={20} />
-          <View style={s.staticRow}>
-            <Text style={s.tapLab}>AI model</Text>
-            <Text style={s.muted}>Groq Llama 3.3</Text>
-          </View>
-        </SRCard>
-
-        <SRPill
-          label={planLabel(plan)}
-          green={plan === 'pro'}
-          ghost={plan === 'free'}
-          size="sm"
-          style={{ alignSelf: 'center', marginTop: 8 }}
-        />
-
-        <TouchableOpacity onPress={handleSignOut} style={s.signOut} activeOpacity={0.75}>
-          <Ionicons name="log-out-outline" size={20} color={COLORS.red} style={{ marginRight: 8 }} />
-          <Text style={s.signOutTxt}>Sign out</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       <Modal visible={menuSession !== null} transparent animationType="fade" onRequestClose={() => setMenuSession(null)}>
@@ -788,46 +671,7 @@ const s = StyleSheet.create({
   },
   socialBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   socialCt: { fontSize: 13, color: COLORS.ink3, fontWeight: '600' },
-  tapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingLeft: 14,
-    paddingRight: 16,
-  },
-  tapLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  tapRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end', marginLeft: 12 },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.blueLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tapLab: { fontSize: 15, color: COLORS.ink2, fontWeight: '600' },
-  tapVal: { fontSize: 14, fontWeight: '600', color: COLORS.ink, textAlign: 'right', maxWidth: '55%' },
-  staticRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
   muted: { fontSize: 14, color: COLORS.ink3, padding: 16 },
-  signOut: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    paddingVertical: 15,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.45)',
-    backgroundColor: 'rgba(248, 113, 113, 0.08)',
-  },
-  signOutTxt: { color: COLORS.red, fontWeight: '700', fontSize: 15 },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   sheetBackdrop: {
     position: 'absolute',

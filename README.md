@@ -110,9 +110,14 @@ File-based routing under `app/`:
 app/
 ├── _layout.tsx              # Root: auth listener, GestureHandlerRootView, Stack
 ├── (auth)/                  # Login, signup, onboarding (goal → level → equipment)
-├── (tabs)/                  # Main shell: Home, Routines, Log, Progress, Profile
-├── routines/                # Routine detail, AI builder screen
-└── workout/                 # Active session + completion summary
+├── (tabs)/                  # Main shell: Home, Routines, Workouts, AI, Profile
+├── profile/                 # Stack: Import / Export (Hevy workout CSV → sessions)
+├── routines/                # Routine detail, AI builder, Import from Hevy *link* (share URL)
+├── workout/                 # Active session + completion summary
+└── log.tsx                  # Quick log route
+
+api/                         # Deployed as Vercel serverless (not part of Expo static bundle)
+└── hevy-routine.ts          # POST: headless Chromium fetch for Hevy share pages (see below)
 ```
 
 - **Unauthenticated users** are redirected to `/(auth)/login` from the tabs layout ([`app/(tabs)/_layout.tsx`](app/(tabs)/_layout.tsx)).
@@ -209,9 +214,10 @@ Database: run `supabase/schema.sql` then `supabase/seed_exercises.sql` in the Su
 ## How **web** works
 
 1. **Same JavaScript bundle** as mobile, compiled with **Metro**; native views map to DOM via **react-native-web**.
-2. **`app.json`** sets `"web": { "bundler": "metro", "output": "static" }` — production is a **static site** (no Node server in Vercel for the app itself).
-3. **Auth** uses `localStorage` (and an in-memory fallback during static export SSR where `window` is absent).
-4. **Hosting:** Vercel runs `npm ci` + `npm run build:web` and serves the **`dist/`** folder.
+2. **`app.json`** sets `"web": { "bundler": "metro", "output": "static" }` — the **Expo app** ships as a **static site** under `dist/` (no Node server *for the SPA*).
+3. **Optional serverless APIs:** files under **`api/`** (e.g. [`api/hevy-routine.ts`](api/hevy-routine.ts)) deploy as **Vercel Functions** alongside `dist/` — used for Hevy routine share-link import (headless browser), not for serving the main UI.
+4. **Auth** uses `localStorage` (and an in-memory fallback during static export SSR where `window` is absent).
+5. **Hosting:** Vercel runs `npm ci` + `npm run build:web` and serves **`dist/`**; see [`vercel.json`](vercel.json) for function memory/time limits.
 
 ---
 
@@ -245,6 +251,52 @@ The Groq client is configured for browser use (`dangerouslyAllowBrowser: true` i
 | `npm run deploy` | Build web + `vercel deploy --prod` |
 | `npm run db:setup` | Apply SQL migrations/seed via `DATABASE_URL` |
 | `npm run typecheck` | `tsc --noEmit` |
+
+---
+
+## Recent updates (auth UI, Hevy import & API)
+
+High-level changelog for navigation, validation, import flows, and hosting behavior recently added in this repo.
+
+### Authentication screens (`app/(auth)/`)
+
+| Area | Change |
+|------|--------|
+| **Signup** | **Inline errors** (field-level + form banner) instead of relying on `Alert` alone — especially important on **web**, where alerts are easy to miss. |
+| **Email** | Client-side format check via shared helper [`lib/validation.ts`](lib/validation.ts) (`isValidEmail`) before calling Supabase. |
+| **Username** | Rules: **3–30** chars, **lowercase letters, digits, underscores** only; errors show under the Username field. |
+| **Password** | Rules: **8–72** chars, **no spaces**, at least **one letter** and **one digit**; errors under Password. |
+| **Profile row (`users`) after signup** | Waits for an **Auth session** (`data.session` + `getSession()` retry) before inserting the profile — avoids RLS `42501` when email confirmation leaves the client without a JWT. |
+| **RLS / duplicate errors** | Mapped to clearer copy (e.g. username taken, RLS / confirm-email hints). |
+| **Login** | **Inline errors** and structured server-message mapping in `app/(auth)/login.tsx` (invalid credentials, unconfirmed email, rate limits, network). |
+
+### Hevy: two import paths (different data)
+
+| Flow | Where in the app | What it imports |
+|------|------------------|-----------------|
+| **Workout history (CSV)** | **Profile → Import / Export** — route [`app/profile/import-export.tsx`](app/profile/import-export.tsx) | Hevy **Settings → Export data → workouts CSV** → past **sessions** / sets in SuperReps (existing [`lib/import-hevy-workouts.ts`](lib/import-hevy-workouts.ts) logic). |
+| **Routine from share link** | **Routines** / **Workouts** → **Import** — [`app/routines/import-hevy-link.tsx`](app/routines/import-hevy-link.tsx) | Public **`https://hevy.com/routine/…`** URL → builds a **routine** (one day, exercises + sets/rest). |
+
+- **Legacy route:** `/routines/import-hevy` **redirects** to **`/profile/import-export`** so old bookmarks still work ([`app/routines/import-hevy.tsx`](app/routines/import-hevy.tsx)).
+- **Profile:** New **“Data”** section + settings menu entry for **Import / Export (Hevy CSV)** ([`app/(tabs)/profile.tsx`](app/(tabs)/profile.tsx)).
+
+### Server + client: fetching a Hevy routine page without CORS issues
+
+| Piece | Role |
+|-------|------|
+| **[`api/hevy-routine.ts`](api/hevy-routine.ts)** | Vercel **serverless** handler: **Puppeteer** + **`@sparticuz/chromium`** loads the public Hevy routine URL, waits for content, returns `{ title, text }` from the rendered page (**no browser CORS**). |
+| **[`lib/import-hevy-routine-share.ts`](lib/import-hevy-routine-share.ts)** | **`fetchHevyRoutineContent`**: tries **`POST /api/hevy-routine`** (same deployment `origin`, or **`EXPO_PUBLIC_SITE_URL`** on native), then falls back to **Jina Reader** if the API is unavailable. **`parseHevyRoutineAny`**: parses **markdown-style** (e.g. Jina) or **plain text** (headless body text). |
+| **[`vercel.json`](vercel.json)** | `functions["api/hevy-routine.ts"]`: **`maxDuration`: 60**, **`memory`: 1024** (Chromium). |
+
+**Environment:** For **iOS/Android**, set **`EXPO_PUBLIC_SITE_URL`** to your production origin (e.g. `https://your-app.vercel.app`) so the app can call **`https://…/api/hevy-routine`**. Web can use the same origin automatically.
+
+### Libraries / exports
+
+- **[`lib/import-hevy-workouts.ts`](lib/import-hevy-workouts.ts)** — exports **`ExerciseRow`**, **`ensureExerciseId`**, and existing CSV import helpers so routine-from-link import can **reuse exercise resolution** (catalog match or custom exercise creation).
+
+### TypeScript
+
+- **`api/`** is **`exclude`d** from the root [`tsconfig.json`](tsconfig.json) so Expo **`tsc`** does not pull server-only Puppeteer types into the app graph.
 
 ---
 

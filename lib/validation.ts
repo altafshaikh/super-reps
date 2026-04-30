@@ -4,3 +4,42 @@ export function isValidEmail(value: string): boolean {
   if (!v) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
+
+const USERNAME_MIN_LEN = 3;
+const USERNAME_MAX_LEN = 30;
+
+/** Client-side username rules (aligned with public.handle-style IDs). */
+export function validateUsername(raw: string): string | null {
+  const u = raw.trim().toLowerCase();
+  if (!u) return null;
+  if (u.length < USERNAME_MIN_LEN) {
+    return `Username must be at least ${USERNAME_MIN_LEN} characters.`;
+  }
+  if (u.length > USERNAME_MAX_LEN) {
+    return `Username must be at most ${USERNAME_MAX_LEN} characters.`;
+  }
+  if (!/^[a-z0-9_]+$/.test(u)) {
+    return 'Use only lowercase letters, numbers, and underscores (no spaces).';
+  }
+  return null;
+}
+
+/** Maps Supabase profile update errors to a short user-facing message. */
+export function describeProfileUsernameError(err: {
+  message?: string;
+  code?: string | number;
+  details?: string;
+}): string {
+  const code = String(err.code ?? '');
+  const blob = `${err.details ?? ''} ${err.message ?? ''}`.toLowerCase();
+  if (code === '42501' || blob.includes('row-level security')) {
+    return 'Could not save your profile. Try again in a moment.';
+  }
+  if (blob.includes('username') || blob.includes('users_username') || blob.includes('key (username)')) {
+    return 'That username is already taken. Pick another one.';
+  }
+  if (code === '23505') {
+    return 'This username already exists. Pick a different one.';
+  }
+  return err.message || 'Could not save your profile.';
+}

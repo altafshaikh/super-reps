@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet,
 } from 'react-native';
@@ -7,8 +7,9 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
-import type { WorkoutSession } from '@/types';
-import { formatDuration, timeAgo } from '@/lib/utils';
+import type { PersonalRecord, WorkoutSession } from '@/types';
+import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
+import { formatDuration, timeAgo, formatWeight } from '@/lib/utils';
 import { COLORS } from '@/constants';
 import { SRCard, SRMetric, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
 
@@ -27,18 +28,23 @@ export default function HomeScreen() {
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyVol, setWeeklyVol] = useState(0);
+  const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('workout_sessions')
-      .select('*, sets:workout_sets(reps)')
-      .eq('user_id', user.id)
-      .is('deleted_at', null)
-      .not('finished_at', 'is', null)
-      .order('started_at', { ascending: false })
-      .limit(DASHBOARD_SESSION_LIMIT);
+    const [sessionsRes, prFlat] = await Promise.all([
+      supabase
+        .from('workout_sessions')
+        .select('*, sets:workout_sets(reps)')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .not('finished_at', 'is', null)
+        .order('started_at', { ascending: false })
+        .limit(DASHBOARD_SESSION_LIMIT),
+      fetchAllSetsForPersonalBests(supabase, user.id),
+    ]);
 
+    const { data } = sessionsRes;
     if (data) {
       setRecentSessions(data as WorkoutSession[]);
       setStreak(calcStreak(data as WorkoutSession[]));
@@ -48,6 +54,8 @@ export default function HomeScreen() {
         .reduce((sum, s) => sum + (s.volume_total ?? 0), 0);
       setWeeklyVol(weekVol);
     }
+    const { bests } = derivePersonalBestsFromFlatRows(prFlat);
+    setPersonalBests(bests);
   }, [user]);
 
   useFocusEffect(
@@ -93,6 +101,11 @@ export default function HomeScreen() {
   const totalVolStr = weeklyVol >= 1000
     ? `${(weeklyVol / 1000).toFixed(1)}k`
     : String(weeklyVol);
+
+  const topPersonalBests = useMemo(
+    () => personalBests.slice(0, 5),
+    [personalBests],
+  );
 
   return (
     <View style={s.root}>
@@ -153,6 +166,26 @@ export default function HomeScreen() {
               </View>
             </SRCard>
           )}
+
+          {/* Personal records — derived from all logged sets (CSV import includes sets, not PR rows) */}
+          {topPersonalBests.length > 0 ? (
+            <SRCard>
+              <SRSectionLabel action="Profile" onAction={() => router.push('/(tabs)/profile')}>
+                Personal records
+              </SRSectionLabel>
+              {topPersonalBests.map((pr, i) => (
+                <View key={pr.id}>
+                  {i > 0 && <SRDivider indent={20} />}
+                  <View style={s.prRow}>
+                    <Text style={s.prName} numberOfLines={1}>
+                      {pr.exercise_name}
+                    </Text>
+                    <Text style={s.prVal}>{formatWeight(Number(pr.value))} kg</Text>
+                  </View>
+                </View>
+              ))}
+            </SRCard>
+          ) : null}
 
           {/* Recent Workouts */}
           <SRCard>
@@ -256,4 +289,13 @@ const s = StyleSheet.create({
   sessionMeta: { fontSize: 11, color: COLORS.ink3, marginTop: 1 },
   sessionVol: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
   sessionVolLabel: { fontSize: 10, color: COLORS.ink3 },
+  prRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  prName: { fontSize: 14, fontWeight: '600', color: COLORS.ink, flex: 1, marginRight: 12 },
+  prVal: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
 });

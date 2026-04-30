@@ -7,7 +7,7 @@ interface UserStore {
   loading: boolean;
   setUser: (user: User | null) => void;
   fetchProfile: (userId: string) => Promise<void>;
-  updateProfile: (updates: Partial<User>) => Promise<void>;
+  updateProfile: (updates: Partial<User>) => Promise<{ error: { message: string; code?: string; details?: string } | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -35,7 +35,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   updateProfile: async (updates) => {
     const { user } = get();
-    if (!user) return;
+    if (!user) return { error: { message: 'Not signed in.' } };
     const { data, error } = await supabase
       .from('users')
       .update(updates)
@@ -43,6 +43,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
       .select()
       .single();
     if (!error && data) set({ user: data as User });
+    return { error: error ? { message: error.message, code: error.code, details: error.details } : null };
   },
 
   signOut: async () => {

@@ -6,30 +6,11 @@ import {
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants';
-import { isValidEmail } from '@/lib/validation';
-
-const USERNAME_MIN_LEN = 3;
-const USERNAME_MAX_LEN = 30;
+import { isValidEmail, validateUsername, describeProfileUsernameError } from '@/lib/validation';
 
 /** Supabase accepts long passwords; bcrypt truncates past ~72 bytes — cap avoids confusion. */
 const PASSWORD_MIN_LEN = 8;
 const PASSWORD_MAX_LEN = 72;
-
-/** Client-side username rules (aligned with public.handle-style IDs). */
-function validateUsername(raw: string): string | null {
-  const u = raw.trim().toLowerCase();
-  if (!u) return null;
-  if (u.length < USERNAME_MIN_LEN) {
-    return `Username must be at least ${USERNAME_MIN_LEN} characters.`;
-  }
-  if (u.length > USERNAME_MAX_LEN) {
-    return `Username must be at most ${USERNAME_MAX_LEN} characters.`;
-  }
-  if (!/^[a-z0-9_]+$/.test(u)) {
-    return 'Use only lowercase letters, numbers, and underscores (no spaces).';
-  }
-  return null;
-}
 
 /** Length + complexity checks before signUp (matches common Supabase weak-password hints). */
 function validatePassword(value: string): string | null {
@@ -52,18 +33,16 @@ function validatePassword(value: string): string | null {
 }
 
 function profileErrorMessage(err: { message?: string; code?: string | number; details?: string }): string {
+  const base = describeProfileUsernameError(err);
   const code = String(err.code ?? '');
   const blob = `${err.details ?? ''} ${err.message ?? ''}`.toLowerCase();
   if (code === '42501' || blob.includes('row-level security')) {
     return 'Could not save your profile. If you just signed up, open the confirmation link in your email, then sign in — or try again in a moment.';
   }
-  if (blob.includes('username') || blob.includes('users_username') || blob.includes('key (username)')) {
-    return 'That username is already taken. Pick another one.';
-  }
-  if (code === '23505') {
+  if (code === '23505' && blob.includes('email')) {
     return 'This account or username already exists. Try signing in, or use a different username.';
   }
-  return err.message || 'Could not save your profile.';
+  return base;
 }
 
 export default function SignupScreen() {

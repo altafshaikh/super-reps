@@ -1,33 +1,107 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, StyleSheet, StatusBar,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
-import { QUICK_PROMPTS, COLORS, quickPromptParts } from '@/constants';
+import { QUICK_PROMPTS, COLORS } from '@/constants';
 import type { AIRoutineJSON, Exercise } from '@/types';
-import { SRCard, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
+
+const SCREEN_BG = '#0a0c14';
+const AI_CARD = '#141824';
+const AI_BUBBLE = '#1a1e2e';
+const MODEL_LINE = 'llama-3.3-70b-versatile · Groq';
+
+const INTRO_AI =
+  "I'll build a personalised programme from your exercise library. Tell me your goal, days available, and any constraints — then tap send.";
+
+const AI_CHIPS: { label: string; prompt: string }[] = [
+  { label: 'PPL 6-Day', prompt: QUICK_PROMPTS[0] },
+  { label: 'Upper/Lower 4d', prompt: QUICK_PROMPTS[1] },
+  { label: 'Full Body 3x', prompt: QUICK_PROMPTS[2] },
+  { label: 'Bro Split 5d', prompt: QUICK_PROMPTS[3] },
+  { label: 'Home', prompt: QUICK_PROMPTS[4] },
+  {
+    label: '5/3/1 Wendler',
+    prompt:
+      'Jim Wendler 5/3/1 style programme — squat, bench, deadlift, overhead press as main lifts, 4 training days per week, monthly progression and deload weeks.',
+  },
+];
+
+function dayBadgeLabel(day: { name: string }): string {
+  const m = day.name.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i);
+  if (m) return m[1].charAt(0).toUpperCase() + m[1].slice(1, 3).toLowerCase();
+  const t = day.name.trim();
+  if (t.length <= 4) return t.toUpperCase();
+  return t.slice(0, 3).toUpperCase();
+}
 
 export default function AITab() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const { user } = useUserStore();
   const { builderState, pendingRoutine, errorMessage, generate, clearBuilder } = useAIStore();
   const [prompt, setPrompt] = useState('');
   const [saving, setSaving] = useState(false);
+  const [displayedUserPrompt, setDisplayedUserPrompt] = useState<string | null>(null);
+  const lastGenerationPrompt = useRef('');
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+  const scrollToEnd = useCallback(() => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
+  useEffect(() => {
+    scrollToEnd();
+  }, [builderState, displayedUserPrompt, pendingRoutine, scrollToEnd]);
+
+  const resetSession = useCallback(() => {
+    clearBuilder();
+    setPrompt('');
+    setDisplayedUserPrompt(null);
+    lastGenerationPrompt.current = '';
+  }, [clearBuilder]);
+
+  const handleGenerate = async (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    lastGenerationPrompt.current = t;
+    setDisplayedUserPrompt(t);
+    setPrompt('');
     const { data: exercises } = await supabase.from('exercises').select('*').limit(150);
-    await generate(prompt, (exercises ?? []) as Exercise[]);
+    await generate(t, (exercises ?? []) as Exercise[]);
+  };
+
+  const handleSend = () => {
+    if (!prompt.trim() || builderState === 'loading') return;
+    void handleGenerate(prompt);
+  };
+
+  const handleRegenerate = async () => {
+    const t = lastGenerationPrompt.current;
+    if (!t.trim() || builderState === 'loading') return;
+    const { data: exercises } = await supabase.from('exercises').select('*').limit(150);
+    await generate(t, (exercises ?? []) as Exercise[]);
   };
 
   const handleSave = async () => {
     if (!pendingRoutine || !user) return;
     setSaving(true);
+    const promptForSave = lastGenerationPrompt.current;
     try {
       const { data: routineRow, error: routineErr } = await supabase
         .from('routines')
@@ -36,7 +110,7 @@ export default function AITab() {
           name: pendingRoutine.name,
           description: pendingRoutine.description,
           created_by_ai: true,
-          ai_prompt: prompt,
+          ai_prompt: promptForSave,
         })
         .select()
         .single();
@@ -69,8 +143,7 @@ export default function AITab() {
         }
       }
 
-      clearBuilder();
-      setPrompt('');
+      resetSession();
       Alert.alert('Saved!', `"${pendingRoutine.name}" added to your routines.`, [
         { text: 'Go to Workouts', onPress: () => router.push('/(tabs)/workouts') },
         { text: 'OK' },
@@ -81,270 +154,448 @@ export default function AITab() {
     setSaving(false);
   };
 
+  const showRoutineCard = builderState === 'preview' && pendingRoutine;
+
   return (
     <KeyboardAvoidingView
       style={s.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <StatusBar barStyle="light-content" />
-      {/* Header */}
-      <View style={s.header}>
-        <View>
-          <Text style={s.pageTitle}>AI Builder</Text>
-          <Text style={s.subtitle}>Powered by Groq Llama 3.3</Text>
-        </View>
-        {builderState !== 'idle' && (
-          <TouchableOpacity onPress={clearBuilder} style={s.resetBtn}>
-            <Text style={{ color: COLORS.ink3, fontSize: 13 }}>Reset</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 14, paddingBottom: 100 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── IDLE: prompt input + quick picks ── */}
-        {(builderState === 'idle' || (builderState as string) === 'error') && (
-          <>
-            <SRCard style={{ marginBottom: 10 }}>
-              <View style={{ padding: 16 }}>
-                <Text style={s.inputLabel}>Describe your ideal programme</Text>
-                <TextInput
-                  style={s.textInput}
-                  placeholder="e.g. 4 day upper/lower, intermediate, barbell + dumbbells, hypertrophy focus"
-                  placeholderTextColor={COLORS.ink3}
-                  value={prompt}
-                  onChangeText={setPrompt}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-                <TouchableOpacity
-                  onPress={handleGenerate}
-                  disabled={!prompt.trim()}
-                  style={[s.generateBtn, !prompt.trim() && s.generateBtnDisabled]}
-                  activeOpacity={0.85}
-                >
-                  {builderState === 'loading' ? (
-                    <ActivityIndicator color={COLORS.bg} />
-                  ) : (
-                    <Text style={[s.generateBtnText, !prompt.trim() && { color: COLORS.ink3 }]}>
-                      ✦ Generate Programme
-                    </Text>
-                  )}
-                </TouchableOpacity>
-                {builderState === 'error' && errorMessage ? (
-                  <Text style={s.errorText}>{errorMessage}</Text>
-                ) : null}
-              </View>
-            </SRCard>
-
-            {/* Quick picks */}
-            <SRCard>
-              <SRSectionLabel>Quick Picks</SRSectionLabel>
-              {QUICK_PROMPTS.map((p, i) => {
-                const { title, subtitle } = quickPromptParts(p);
-                return (
-                <View key={p}>
-                  {i > 0 && <SRDivider indent={20} />}
-                  <TouchableOpacity
-                    style={s.quickPickRow}
-                    activeOpacity={0.7}
-                    onPress={() => setPrompt(p)}
-                  >
-                    <Ionicons name="flash" size={15} color={COLORS.amber} style={{ marginTop: 1 }} />
-                    <Text style={s.quickPickTextWrap} numberOfLines={3}>
-                      <Text style={s.quickPickTitle}>{title}</Text>
-                      {subtitle ? (
-                        <Text style={s.quickPickSubtitle}>{' — '}{subtitle}</Text>
-                      ) : null}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={18} color={COLORS.ink3} />
-                  </TouchableOpacity>
-                </View>
-                );
-              })}
-            </SRCard>
-          </>
-        )}
-
-        {/* ── LOADING ── */}
-        {builderState === 'loading' && (
-          <View style={s.loadingState}>
-            <ActivityIndicator size="large" color={COLORS.ink} />
-            <Text style={s.loadingTitle}>Building your programme…</Text>
-            <Text style={s.loadingSubtitle}>
-              Groq is generating a personalised routine{'\n'}matched to your exercise library
-            </Text>
+      <View style={[s.flex, { backgroundColor: SCREEN_BG }]}>
+        {/* Header */}
+        <View style={[s.header, { paddingTop: insets.top + 12 }]}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={s.pageTitle}>AI Builder</Text>
+            <Text style={s.modelLine}>{MODEL_LINE}</Text>
           </View>
-        )}
+          <View style={s.headerActions}>
+            {builderState !== 'idle' && (
+              <TouchableOpacity onPress={resetSession} style={s.headerLink} hitSlop={10}>
+                <Text style={s.headerLinkText}>New</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/routines')}
+              style={s.libraryBtn}
+              hitSlop={8}
+            >
+              <View style={s.libraryDotWrap}>
+                <View style={s.libraryDot} />
+              </View>
+              <Text style={s.libraryLabel}>Library</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {/* ── PREVIEW ── */}
-        {builderState === 'preview' && pendingRoutine && (
-          <RoutinePreview
-            routine={pendingRoutine}
-            onSave={handleSave}
-            onDiscard={() => { clearBuilder(); setPrompt(''); }}
-            saving={saving}
-          />
-        )}
-      </ScrollView>
+        <ScrollView
+          ref={scrollRef}
+          style={s.flex}
+          contentContainerStyle={[s.scrollContent, { paddingBottom: 12 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={scrollToEnd}
+        >
+          {/* AI intro */}
+          <View style={s.aiBubbleWrap}>
+            <View style={s.aiBubble}>
+              <Text style={s.aiBubbleText}>{INTRO_AI}</Text>
+            </View>
+          </View>
+
+          {displayedUserPrompt ? (
+            <View style={s.userBubbleWrap}>
+              <View style={s.userBubble}>
+                <Text style={s.userBubbleText}>{displayedUserPrompt}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {builderState === 'loading' ? (
+            <View style={s.aiBubbleWrap}>
+              <View style={[s.aiBubble, s.typingBubble]}>
+                <ActivityIndicator color={COLORS.ink2} size="small" />
+                <Text style={s.typingText}>Building your programme…</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {builderState === 'error' && errorMessage ? (
+            <View style={s.aiBubbleWrap}>
+              <View style={[s.aiBubble, s.errorBubble]}>
+                <Text style={s.errorBubbleText}>{errorMessage}</Text>
+                <TouchableOpacity onPress={() => void handleRegenerate()} style={s.retryChip}>
+                  <Text style={s.retryChipText}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
+          {showRoutineCard && pendingRoutine ? (
+            <RoutineChatCard
+              routine={pendingRoutine}
+              onSave={handleSave}
+              onRegenerate={() => void handleRegenerate()}
+              onDiscard={resetSession}
+              saving={saving}
+            />
+          ) : null}
+        </ScrollView>
+
+        <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.chipsRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {AI_CHIPS.map((chip) => (
+              <TouchableOpacity
+                key={chip.label}
+                style={s.chip}
+                onPress={() => setPrompt(chip.prompt)}
+                activeOpacity={0.75}
+              >
+                <Text style={s.chipText}>{chip.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={s.composerRow}>
+            <TextInput
+              style={s.composerInput}
+              placeholder="Describe your programme…"
+              placeholderTextColor={COLORS.ink3}
+              value={prompt}
+              onChangeText={setPrompt}
+              multiline
+              maxLength={2000}
+              editable={builderState !== 'loading'}
+            />
+            <TouchableOpacity
+              style={[s.sendBtn, !prompt.trim() && s.sendBtnDisabled]}
+              onPress={handleSend}
+              disabled={!prompt.trim() || builderState === 'loading'}
+              activeOpacity={0.85}
+            >
+              {builderState === 'loading' ? (
+                <ActivityIndicator color={SCREEN_BG} size="small" />
+              ) : (
+                <Ionicons name="arrow-forward" size={22} color={SCREEN_BG} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
-function RoutinePreview({
-  routine, onSave, onDiscard, saving,
+function RoutineChatCard({
+  routine,
+  onSave,
+  onRegenerate,
+  onDiscard,
+  saving,
 }: {
   routine: AIRoutineJSON;
   onSave: () => void;
+  onRegenerate: () => void;
   onDiscard: () => void;
   saving: boolean;
 }) {
-  const [expanded, setExpanded] = useState<number | null>(0);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   return (
-    <View style={{ gap: 10 }}>
-      {/* Summary card */}
-      <SRCard>
-        <View style={{ padding: 18 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Text style={s.routineTitle}>{routine.name}</Text>
-            <SRPill label="AI" size="xs" style={{ backgroundColor: COLORS.blueLight }} />
-          </View>
-          <Text style={s.routineDesc}>{routine.description}</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-            {[`${routine.days_per_week} days/wk`, routine.goal, routine.level].map(tag => (
-              <SRPill key={tag} label={tag} muted size="xs" />
-            ))}
-          </View>
+    <View style={s.routineCard}>
+      <View style={s.routineCardHeader}>
+        <Text style={s.routineModelTag}>LLAMA-3.3-70B-VERSATILE</Text>
+        <View style={s.daysBadge}>
+          <Text style={s.daysBadgeText}>{routine.days_per_week}d/wk</Text>
         </View>
-      </SRCard>
+      </View>
+      <Text style={s.routineCardTitle}>{routine.name}</Text>
+      <Text style={s.routineCardDesc} numberOfLines={3}>
+        {routine.description}
+      </Text>
 
-      {/* Programme days */}
-      <SRCard>
-        <SRSectionLabel>Programme</SRSectionLabel>
+      <View style={s.dayList}>
         {routine.days.map((day, i) => (
-          <View key={day.day_index}>
-            {i > 0 && <SRDivider indent={20} />}
+          <View key={`${day.day_index}-${i}`}>
+            {i > 0 ? <View style={s.dayDivider} /> : null}
             <TouchableOpacity
-              style={s.dayHeader}
+              style={s.dayRow}
               activeOpacity={0.75}
               onPress={() => setExpanded(expanded === day.day_index ? null : day.day_index)}
             >
-              <View style={{ flex: 1 }}>
-                <Text style={s.dayName}>{day.name}</Text>
-                <Text style={s.dayCount}>
-                  {day.exercises.length > 0 ? `${day.exercises.length} exercises` : 'Rest Day'}
+              <View style={s.dayBadge}>
+                <Text style={s.dayBadgeText}>{dayBadgeLabel(day)}</Text>
+              </View>
+              <View style={s.dayRowText}>
+                <Text style={s.dayRowTitle} numberOfLines={1}>
+                  {day.name}
+                </Text>
+                <Text style={s.dayRowSub}>
+                  {day.exercises.length > 0 ? `${day.exercises.length} exercises` : 'Rest day'}
                 </Text>
               </View>
-              <Text style={{ color: COLORS.ink3, fontSize: 16 }}>
-                {expanded === day.day_index ? '∧' : '∨'}
-              </Text>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.ink3} />
             </TouchableOpacity>
-            {expanded === day.day_index && day.exercises.length > 0 && (
-              <View style={{ backgroundColor: COLORS.surface2 }}>
+            {expanded === day.day_index && day.exercises.length > 0 ? (
+              <View style={s.dayExpanded}>
                 {day.exercises.map((ex, j) => (
                   <View key={j}>
-                    {j > 0 && <SRDivider indent={16} />}
+                    {j > 0 ? <View style={s.exDivider} /> : null}
                     <View style={s.exRow}>
-                      <Text style={s.exName}>
-                        {ex.exercise_slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      <Text style={s.exName} numberOfLines={2}>
+                        {ex.exercise_slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                       </Text>
-                      <Text style={s.exSets}>{ex.sets}×{ex.rep_range}</Text>
+                      <Text style={s.exSets}>
+                        {ex.sets}×{ex.rep_range}
+                      </Text>
                     </View>
                   </View>
                 ))}
               </View>
-            )}
+            ) : null}
           </View>
         ))}
-      </SRCard>
+      </View>
 
-      {/* Progression */}
       {routine.progression ? (
-        <SRCard style={{ padding: 16 }}>
-          <Text style={[s.inputLabel, { marginBottom: 6 }]}>Progression</Text>
-          <Text style={{ fontSize: 13, color: COLORS.ink2, lineHeight: 19 }}>{routine.progression}</Text>
-        </SRCard>
+        <View style={s.progressionBlock}>
+          <Text style={s.progressionLabel}>Progression</Text>
+          <Text style={s.progressionBody}>{routine.progression}</Text>
+        </View>
       ) : null}
 
-      {/* Actions */}
-      <TouchableOpacity
-        onPress={onSave}
-        disabled={saving}
-        style={s.saveBtn}
-        activeOpacity={0.85}
-      >
-        {saving ? (
-          <ActivityIndicator color={COLORS.bg} />
-        ) : (
-          <Text style={s.saveBtnText}>Save Routine</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onDiscard} style={s.discardBtn} activeOpacity={0.7}>
-        <Text style={{ color: COLORS.ink3, fontSize: 14 }}>Discard & start over</Text>
+      <View style={s.cardActions}>
+        <TouchableOpacity
+          onPress={onSave}
+          disabled={saving}
+          style={s.saveRoutineBtn}
+          activeOpacity={0.88}
+        >
+          {saving ? (
+            <ActivityIndicator color={SCREEN_BG} />
+          ) : (
+            <Text style={s.saveRoutineBtnText}>Save Routine</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onRegenerate}
+          disabled={saving}
+          style={s.regenBtn}
+          activeOpacity={0.75}
+        >
+          <Text style={s.regenBtnText}>Regenerate</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity onPress={onDiscard} style={s.discardLink} hitSlop={12}>
+        <Text style={s.discardLinkText}>Discard</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.bg },
+  root: { flex: 1, backgroundColor: SCREEN_BG },
+  flex: { flex: 1 },
   header: {
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 56, paddingBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
   },
-  pageTitle: { fontSize: 28, fontWeight: '800', color: COLORS.ink },
-  subtitle: { fontSize: 12, color: COLORS.ink3, marginTop: 2 },
-  resetBtn: { paddingVertical: 6, paddingHorizontal: 10 },
-  inputLabel: {
-    fontSize: 11, color: COLORS.ink3, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 10,
+  pageTitle: { fontSize: 26, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.3 },
+  modelLine: { fontSize: 11, color: COLORS.ink3, marginTop: 4, letterSpacing: 0.2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingTop: 4 },
+  headerLink: { paddingVertical: 4 },
+  headerLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.ink3 },
+  libraryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  libraryDotWrap: { justifyContent: 'center', alignItems: 'center' },
+  libraryDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: COLORS.green,
+    shadowColor: COLORS.green,
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
   },
-  textInput: {
-    borderRadius: 12, borderWidth: 0.5, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface, padding: 14,
-    fontSize: 14, color: COLORS.ink, minHeight: 90,
-    marginBottom: 14,
+  libraryLabel: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
+  aiBubbleWrap: { alignItems: 'flex-start', marginBottom: 12 },
+  aiBubble: {
+    maxWidth: '92%',
+    backgroundColor: AI_BUBBLE,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  generateBtn: {
-    height: 48, borderRadius: 12, backgroundColor: COLORS.ink,
-    alignItems: 'center', justifyContent: 'center',
+  aiBubbleText: { fontSize: 15, color: COLORS.ink2, lineHeight: 22 },
+  userBubbleWrap: { alignItems: 'flex-end', marginBottom: 12 },
+  userBubble: {
+    maxWidth: '92%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  generateBtnDisabled: { backgroundColor: COLORS.surface2 },
-  generateBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 15 },
-  errorText: { color: COLORS.red, fontSize: 13, marginTop: 10, textAlign: 'center' },
-  quickPickRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, gap: 12,
+  userBubbleText: { fontSize: 15, color: SCREEN_BG, lineHeight: 22, fontWeight: '500' },
+  typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  typingText: { fontSize: 14, color: COLORS.ink3, fontWeight: '600' },
+  errorBubble: { borderColor: 'rgba(248,113,113,0.35)' },
+  errorBubbleText: { color: COLORS.red, fontSize: 14, lineHeight: 20 },
+  retryChip: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(248,113,113,0.15)',
   },
-  quickPickTextWrap: { flex: 1, flexWrap: 'wrap' },
-  quickPickTitle: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
-  quickPickSubtitle: { fontSize: 14, fontWeight: '400', color: COLORS.ink3 },
-  loadingState: { alignItems: 'center', paddingTop: 80, paddingBottom: 40, gap: 16 },
-  loadingTitle: { fontSize: 18, fontWeight: '700', color: COLORS.ink },
-  loadingSubtitle: { fontSize: 13, color: COLORS.ink3, textAlign: 'center', lineHeight: 20 },
-  routineTitle: { fontSize: 22, fontWeight: '900', color: COLORS.ink, flex: 1 },
-  routineDesc: { fontSize: 13, color: COLORS.ink2, lineHeight: 18, marginTop: 4 },
-  dayHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: 16, paddingHorizontal: 20,
+  retryChipText: { color: COLORS.red, fontSize: 13, fontWeight: '700' },
+  routineCard: {
+    backgroundColor: AI_CARD,
+    borderRadius: 20,
+    padding: 18,
+    marginTop: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.borderMid,
   },
-  dayName: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
-  dayCount: { fontSize: 11, color: COLORS.ink3, marginTop: 1 },
+  routineCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  routineModelTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: COLORS.ink3,
+    letterSpacing: 0.8,
+  },
+  daysBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  daysBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.ink2, letterSpacing: 0.3 },
+  routineCardTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.ink,
+    letterSpacing: -0.8,
+    marginBottom: 6,
+  },
+  routineCardDesc: { fontSize: 13, color: COLORS.ink3, lineHeight: 19 },
+  dayList: { marginTop: 16, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.2)' },
+  dayDivider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+  dayBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.ink, letterSpacing: 0.2 },
+  dayRowText: { flex: 1, minWidth: 0 },
+  dayRowTitle: { fontSize: 15, fontWeight: '700', color: COLORS.ink },
+  dayRowSub: { fontSize: 12, color: COLORS.ink3, marginTop: 2 },
+  dayExpanded: { backgroundColor: 'rgba(0,0,0,0.25)', paddingBottom: 4 },
+  exDivider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 68 },
   exRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 10, paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingLeft: 68,
   },
-  exName: { fontSize: 13, color: COLORS.ink2, flex: 1 },
+  exName: { flex: 1, fontSize: 13, color: COLORS.ink2, paddingRight: 8 },
   exSets: { fontSize: 13, fontWeight: '700', color: COLORS.blue },
-  saveBtn: {
-    height: 50, borderRadius: 14, backgroundColor: COLORS.ink,
-    alignItems: 'center', justifyContent: 'center',
+  progressionBlock: { marginTop: 14, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  progressionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.ink3,
+    letterSpacing: 0.7,
+    marginBottom: 6,
   },
-  saveBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 16 },
-  discardBtn: { alignItems: 'center', paddingVertical: 12 },
+  progressionBody: { fontSize: 13, color: COLORS.ink2, lineHeight: 19 },
+  cardActions: { marginTop: 18, gap: 10 },
+  saveRoutineBtn: {
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveRoutineBtnText: { color: SCREEN_BG, fontWeight: '800', fontSize: 16 },
+  regenBtn: {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  regenBtnText: { color: COLORS.ink, fontWeight: '700', fontSize: 15 },
+  discardLink: { alignItems: 'center', marginTop: 8, paddingVertical: 6 },
+  discardLinkText: { fontSize: 13, color: COLORS.ink3, fontWeight: '600' },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
+    backgroundColor: SCREEN_BG,
+    paddingTop: 10,
+    paddingHorizontal: 12,
+  },
+  chipsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 10, paddingHorizontal: 4 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: AI_BUBBLE,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.ink2 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 4 },
+  composerInput: {
+    flex: 1,
+    minHeight: 46,
+    maxHeight: 120,
+    borderRadius: 16,
+    backgroundColor: AI_BUBBLE,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.ink,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sendBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendBtnDisabled: { backgroundColor: COLORS.ink4, opacity: 0.45 },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import Svg, { Path, Rect, Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { COLORS } from '@/constants';
 
 function IconHome({ active }: { active: boolean }) {
@@ -18,39 +19,41 @@ function IconHome({ active }: { active: boolean }) {
   );
 }
 
-function IconLog({ active }: { active: boolean }) {
+/** Barbell / dumbbell — reads clearly at tab size vs. a generic “log” journal. */
+function IconWorkouts({ active }: { active: boolean }) {
   const c = active ? COLORS.ink : COLORS.ink3;
   const sw = active ? 2 : 1.5;
+  const fill = active ? c : 'none';
+  const fo = active ? 0.08 : 0;
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Rect
-        x={4} y={3} width={16} height={18} rx={3}
+      <Circle
+        cx={7.5} cy={12} r={4}
         stroke={c} strokeWidth={sw}
-        fill={active ? c : 'none'} fillOpacity={active ? 0.08 : 0}
+        fill={fill} fillOpacity={fo}
       />
-      <Path d="M8 8h8M8 12h6M8 16h4" stroke={c} strokeWidth={1.5} strokeLinecap="round" />
+      <Path
+        d="M11.5 12h5"
+        stroke={c} strokeWidth={sw} strokeLinecap="round"
+      />
+      <Circle
+        cx={16.5} cy={12} r={4}
+        stroke={c} strokeWidth={sw}
+        fill={fill} fillOpacity={fo}
+      />
     </Svg>
   );
 }
 
+/** Chat bubble — matches AI Builder conversational tab. */
 function IconAI({ active }: { active: boolean }) {
   const c = active ? COLORS.ink : COLORS.ink3;
-  const sw = active ? 2 : 1.5;
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 2C8.7 2 6 4.5 6 7.5c0 1.8.9 3.4 2.3 4.4L7.5 15l3.5-1.5c.3.1.6.1 1 .1 3.3 0 6-2.5 6-5.5S15.3 2 12 2z"
-        stroke={c} strokeWidth={sw}
-        fill={active ? c : 'none'} fillOpacity={active ? 0.08 : 0}
-      />
-      <Circle cx={9.5} cy={7.5} r={1} fill={c} />
-      <Circle cx={12} cy={7.5} r={1} fill={c} />
-      <Circle cx={14.5} cy={7.5} r={1} fill={c} />
-      <Path
-        d="M7.5 15c-2.8 1.2-4.5 3.2-4.5 5.5h18c0-2.3-1.7-4.3-4.5-5.5"
-        stroke={c} strokeWidth={1.5} strokeLinecap="round"
-      />
-    </Svg>
+    <Ionicons
+      name={active ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'}
+      size={22}
+      color={c}
+    />
   );
 }
 
@@ -71,8 +74,8 @@ function IconProfile({ active }: { active: boolean }) {
 
 const TABS = [
   { id: 'index',    label: 'Home',     Icon: IconHome },
-  { id: 'workouts', label: 'Workouts', Icon: IconLog },
-  { id: 'ai',       label: 'AI',       Icon: IconAI },
+  { id: 'workouts', label: 'Workouts', Icon: IconWorkouts },
+  { id: 'ai',       label: 'AI Build', Icon: IconAI },
   { id: 'profile',  label: 'Profile',  Icon: IconProfile },
 ];
 
