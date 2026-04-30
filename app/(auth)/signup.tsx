@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import type { Session } from '@supabase/supabase-js';
 import { getEmailRedirectUrl, supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants';
 import { isValidEmail, validateUsername, describeProfileUsernameError } from '@/lib/validation';
@@ -38,12 +39,91 @@ function profileErrorMessage(err: { message?: string; code?: string | number; de
   const code = String(err.code ?? '');
   const blob = `${err.details ?? ''} ${err.message ?? ''}`.toLowerCase();
   if (code === '42501' || blob.includes('row-level security')) {
-    return 'Could not save your profile. If you just signed up, open the confirmation link in your email, then sign in — or try again in a moment.';
+    return 'Could not save your profile. Wait a few seconds and tap Create Account again — or confirm your email first, then sign in.';
   }
   if (code === '23505' && blob.includes('email')) {
     return 'This account or username already exists. Try signing in, or use a different username.';
   }
   return base;
+}
+
+/**
+ * Ensures JWT is attached to the client, then upserts or patches `public.users`.
+ * Retries on RLS timing; skips writes if the DB trigger already inserted the row.
+ */
+async function syncSignupProfile(
+  userId: string,
+  cleanEmail: string,
+  cleanUsername: string,
+  session: Session,
+): Promise<{ error: { message?: string; code?: string | number; details?: string } | null }> {
+  const { error: setErr } = await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+  if (setErr) {
+    return { error: setErr };
+  }
+
+  const profilePayload = {
+    id: userId,
+    email: cleanEmail,
+    username: cleanUsername,
+    plan: 'free' as const,
+  };
+
+  const delays = [0, 200, 500, 1000, 2000] as const;
+  let lastRlsError: { message?: string; code?: string | number; details?: string } | null = null;
+
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) {
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+    await supabase.auth.getSession();
+
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.username === cleanUsername) {
+        return { error: null };
+      }
+      const { error: uErr } = await supabase
+        .from('users')
+        .update({ username: cleanUsername, email: cleanEmail })
+        .eq('id', userId);
+      if (!uErr) {
+        return { error: null };
+      }
+      const rls =
+        String(uErr.code) === '42501'
+        || (uErr.message ?? '').toLowerCase().includes('row-level security');
+      if (!rls) {
+        return { error: uErr };
+      }
+      lastRlsError = uErr;
+      continue;
+    }
+
+    const { error: upErr } = await supabase
+      .from('users')
+      .upsert(profilePayload, { onConflict: 'id' });
+    if (!upErr) {
+      return { error: null };
+    }
+    const rls =
+      String(upErr.code) === '42501'
+      || (upErr.message ?? '').toLowerCase().includes('row-level security');
+    if (!rls) {
+      return { error: upErr };
+    }
+    lastRlsError = upErr;
+  }
+
+  return { error: lastRlsError ?? { message: 'Profile sync failed', code: '42501' } };
 }
 
 export default function SignupScreen() {
@@ -187,31 +267,12 @@ export default function SignupScreen() {
       return;
     }
 
-    const profilePayload = {
-      id: data.user.id,
-      email: cleanEmail,
-      username: cleanUsername,
-      plan: 'free' as const,
-    };
-
-    let profileError: { message?: string; code?: string | number; details?: string } | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await supabase.auth.getSession();
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      const { error: upErr } = await supabase
-        .from('users')
-        .upsert(profilePayload, { onConflict: 'id' });
-      if (!upErr) {
-        profileError = null;
-        break;
-      }
-      profileError = upErr;
-      const blob = `${upErr.code ?? ''} ${upErr.message ?? ''}`.toLowerCase();
-      const rls = String(upErr.code) === '42501' || blob.includes('row-level security');
-      if (!rls) break;
-    }
+    const { error: profileError } = await syncSignupProfile(
+      data.user.id,
+      cleanEmail,
+      cleanUsername,
+      session,
+    );
 
     if (profileError) {
       await supabase.auth.signOut();
