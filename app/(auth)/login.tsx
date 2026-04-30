@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator, StyleSheet, StatusBar,
@@ -74,11 +74,25 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [emailConfirmedHint, setEmailConfirmedHint] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({
     email: '',
     password: '',
     form: '',
   });
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const hash = window.location.hash;
+    if (hash.includes('access_token') || hash.includes('type=signup')) {
+      setEmailConfirmedHint(true);
+    }
+    void supabase.auth.getSession().then(() => {
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      }
+    });
+  }, []);
 
   const handleLogin = async () => {
     const cleanEmail = email.trim().toLowerCase();
@@ -125,6 +139,9 @@ export default function LoginScreen() {
           </View>
 
           <View style={s.form}>
+            {emailConfirmedHint ? (
+              <Text style={s.confirmBanner}>Email confirmed — you can sign in below.</Text>
+            ) : null}
             {!!errors.form && <Text style={s.formError}>{errors.form}</Text>}
             <View>
               <Text style={s.fieldLabel}>Email</Text>
@@ -197,6 +214,14 @@ const s = StyleSheet.create({
   appName: { fontSize: 40, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
   tagline: { color: COLORS.ink3, marginTop: 6, fontSize: 15 },
   form: { gap: 16 },
+  confirmBanner: {
+    color: COLORS.green,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
   formError: { color: COLORS.red, fontSize: 14, lineHeight: 20, marginBottom: 4 },
   fieldError: { color: COLORS.red, fontSize: 13, marginTop: 6, lineHeight: 18 },
   fieldLabel: { color: COLORS.ink2, fontSize: 13, fontWeight: '600', marginBottom: 6 },

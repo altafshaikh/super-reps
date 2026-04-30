@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 
 /** Non-empty defaults so `expo export` / SSR can bundle without env (e.g. CI). Set real values in production. */
@@ -43,11 +44,28 @@ const authStorage =
         removeItem: (key: string) => SecureStore.deleteItemAsync(key),
       };
 
+/**
+ * `emailRedirectTo` for sign-up confirmation — user must land on a route your SPA serves.
+ * Use `/login` (not `/`) so the web bundle loads and Supabase can read `#access_token=…`.
+ * Add each full URL under Supabase → Auth → URL Configuration → Redirect URLs.
+ */
+export function getEmailRedirectUrl(): string | undefined {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/login`;
+    }
+    const fromEnv = process.env.EXPO_PUBLIC_SITE_URL?.trim().replace(/\/$/, '');
+    return fromEnv ? `${fromEnv}/login` : undefined;
+  }
+  return Linking.createURL('/login');
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    /** Web: read `#access_token=…` from email confirmation redirects (must stay true on web). */
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });

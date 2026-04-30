@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator, StyleSheet, StatusBar,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { getEmailRedirectUrl, supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants';
 import { isValidEmail, validateUsername, describeProfileUsernameError } from '@/lib/validation';
 
@@ -45,12 +46,19 @@ function profileErrorMessage(err: { message?: string; code?: string | number; de
   return base;
 }
 
+const LOGIN_REDIRECT_MS = 4500;
+
 export default function SignupScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Email confirmation required — show success + verify, then login (not a form error). */
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
+  const [redirectSeconds, setRedirectSeconds] = useState(0);
+  const redirectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [errors, setErrors] = useState({
     username: '',
     email: '',
@@ -60,6 +68,34 @@ export default function SignupScreen() {
 
   const clearErrors = () =>
     setErrors({ username: '', email: '', form: '', password: '' });
+
+  const goToLogin = useCallback(() => {
+    if (redirectTimerRef.current) {
+      clearInterval(redirectTimerRef.current);
+      redirectTimerRef.current = null;
+    }
+    router.replace('/(auth)/login');
+  }, [router]);
+
+  useEffect(() => {
+    if (!verifyEmail) return;
+    const deadline = Date.now() + LOGIN_REDIRECT_MS;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRedirectSeconds(left);
+      if (left <= 0) {
+        goToLogin();
+      }
+    };
+    tick();
+    redirectTimerRef.current = setInterval(tick, 500);
+    return () => {
+      if (redirectTimerRef.current) {
+        clearInterval(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, [verifyEmail, goToLogin]);
 
   const handleSignup = async () => {
     const cleanEmail = email.trim().toLowerCase();
@@ -104,9 +140,11 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
+    const emailRedirectTo = getEmailRedirectUrl();
     const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
+      ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
     });
     if (error) {
       setLoading(false);
@@ -131,12 +169,8 @@ export default function SignupScreen() {
     }
     if (!data.user) {
       setLoading(false);
-      setErrors({
-        username: '',
-        email: '',
-        form: 'Check your email — if confirmation is on, use the link in your inbox to finish signup.',
-        password: '',
-      });
+      setPassword('');
+      setVerifyEmail(cleanEmail);
       return;
     }
 
@@ -147,13 +181,8 @@ export default function SignupScreen() {
     }
     if (!session) {
       setLoading(false);
-      setErrors({
-        username: '',
-        email:
-          'Confirm your email using the link we sent, then sign in. Your profile is saved after you are signed in.',
-        form: '',
-        password: '',
-      });
+      setPassword('');
+      setVerifyEmail(cleanEmail);
       return;
     }
 
@@ -182,6 +211,36 @@ export default function SignupScreen() {
     setLoading(false);
     router.replace('/(auth)/onboarding/goal');
   };
+
+  if (verifyEmail) {
+    return (
+      <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <StatusBar barStyle="light-content" />
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <View style={s.container}>
+            <View style={s.successIconWrap}>
+              <Ionicons name="checkmark-circle" size={72} color={COLORS.green} />
+            </View>
+            <Text style={s.successTitle}>Account created successfully</Text>
+            <Text style={s.successLead}>
+              Please verify your email. We sent a confirmation link to:
+            </Text>
+            <Text style={s.successEmail}>{verifyEmail}</Text>
+            <Text style={s.successHint}>
+              Open that email, tap the link, then sign in. Your profile finishes saving once you are
+              signed in.
+            </Text>
+            <TouchableOpacity style={s.primaryBtn} onPress={goToLogin} activeOpacity={0.85}>
+              <Text style={s.primaryBtnText}>Go to Sign in</Text>
+            </TouchableOpacity>
+            {redirectSeconds > 0 ? (
+              <Text style={s.redirectNote}>Taking you to sign in in {redirectSeconds}s…</Text>
+            ) : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -301,4 +360,41 @@ const s = StyleSheet.create({
   },
   primaryBtnText: { color: COLORS.bg, fontWeight: '700', fontSize: 16 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32 },
+  successIconWrap: { alignItems: 'center', marginBottom: 24 },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.ink,
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: -0.3,
+  },
+  successLead: {
+    fontSize: 15,
+    color: COLORS.ink2,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  successEmail: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.blue,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  successHint: {
+    fontSize: 14,
+    color: COLORS.ink3,
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 28,
+    paddingHorizontal: 8,
+  },
+  redirectNote: {
+    marginTop: 16,
+    fontSize: 13,
+    color: COLORS.ink3,
+    textAlign: 'center',
+  },
 });
