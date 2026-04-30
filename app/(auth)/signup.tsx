@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator, StyleSheet, StatusBar,
@@ -46,18 +46,16 @@ function profileErrorMessage(err: { message?: string; code?: string | number; de
   return base;
 }
 
-const LOGIN_REDIRECT_MS = 4500;
-
 export default function SignupScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
-  /** Email confirmation required — show success + verify, then login (not a form error). */
+  /** Email confirmation required — show success + verify (not a form error). */
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
-  const [redirectSeconds, setRedirectSeconds] = useState(0);
-  const redirectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendInfo, setResendInfo] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [errors, setErrors] = useState({
     username: '',
@@ -70,32 +68,32 @@ export default function SignupScreen() {
     setErrors({ username: '', email: '', form: '', password: '' });
 
   const goToLogin = useCallback(() => {
-    if (redirectTimerRef.current) {
-      clearInterval(redirectTimerRef.current);
-      redirectTimerRef.current = null;
-    }
     router.replace('/(auth)/login');
   }, [router]);
 
-  useEffect(() => {
+  const handleResendConfirmation = async () => {
     if (!verifyEmail) return;
-    const deadline = Date.now() + LOGIN_REDIRECT_MS;
-    const tick = () => {
-      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-      setRedirectSeconds(left);
-      if (left <= 0) {
-        goToLogin();
-      }
-    };
-    tick();
-    redirectTimerRef.current = setInterval(tick, 500);
-    return () => {
-      if (redirectTimerRef.current) {
-        clearInterval(redirectTimerRef.current);
-        redirectTimerRef.current = null;
-      }
-    };
-  }, [verifyEmail, goToLogin]);
+    setResendBusy(true);
+    setResendInfo(null);
+    const emailRedirectTo = getEmailRedirectUrl();
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: verifyEmail,
+      ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
+    });
+    setResendBusy(false);
+    if (error) {
+      setResendInfo({
+        ok: false,
+        text: error.message ?? 'Could not resend. Wait a minute and try again.',
+      });
+    } else {
+      setResendInfo({
+        ok: true,
+        text: 'Sent again — check inbox and spam. Links can take a few minutes.',
+      });
+    }
+  };
 
   const handleSignup = async () => {
     const cleanEmail = email.trim().toLowerCase();
@@ -246,15 +244,27 @@ export default function SignupScreen() {
             </Text>
             <Text style={s.successEmail}>{verifyEmail}</Text>
             <Text style={s.successHint}>
-              Open that email, tap the link, then sign in. Your profile finishes saving once you are
-              signed in.
+              Open that email and tap the confirmation link, then sign in here. Messages can take a few
+              minutes — check spam and promotions. If nothing arrives, use Resend below.
             </Text>
+            {resendInfo ? (
+              <Text style={resendInfo.ok ? s.resendOk : s.resendErr}>{resendInfo.text}</Text>
+            ) : null}
+            <TouchableOpacity
+              style={[s.secondaryBtn, resendBusy && s.secondaryBtnDisabled]}
+              onPress={handleResendConfirmation}
+              disabled={resendBusy}
+              activeOpacity={0.85}
+            >
+              {resendBusy ? (
+                <ActivityIndicator color={COLORS.ink} />
+              ) : (
+                <Text style={s.secondaryBtnText}>Resend confirmation email</Text>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={s.primaryBtn} onPress={goToLogin} activeOpacity={0.85}>
               <Text style={s.primaryBtnText}>Go to Sign in</Text>
             </TouchableOpacity>
-            {redirectSeconds > 0 ? (
-              <Text style={s.redirectNote}>Taking you to sign in in {redirectSeconds}s…</Text>
-            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -407,13 +417,34 @@ const s = StyleSheet.create({
     color: COLORS.ink3,
     textAlign: 'center',
     lineHeight: 21,
-    marginBottom: 28,
+    marginBottom: 16,
     paddingHorizontal: 8,
   },
-  redirectNote: {
-    marginTop: 16,
+  resendOk: {
     fontSize: 13,
-    color: COLORS.ink3,
+    color: COLORS.green,
     textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 12,
+    paddingHorizontal: 8,
   },
+  resendErr: {
+    fontSize: 13,
+    color: COLORS.red,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  secondaryBtn: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 0.5,
+    borderColor: COLORS.borderMid,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  secondaryBtnDisabled: { opacity: 0.6 },
+  secondaryBtnText: { color: COLORS.ink, fontWeight: '600', fontSize: 15 },
 });
