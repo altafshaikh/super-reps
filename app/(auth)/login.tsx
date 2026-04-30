@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useUserStore } from '@/stores/userStore';
 import { isValidEmail } from '@/lib/validation';
 import { COLORS } from '@/constants';
 
@@ -71,6 +72,8 @@ function mapSignInError(raw: string): LoginErrors {
 }
 
 export default function LoginScreen() {
+  const signInBlockedMessage = useUserStore((s) => s.signInBlockedMessage);
+  const clearSignInBlockedMessage = useUserStore((s) => s.clearSignInBlockedMessage);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,6 +83,12 @@ export default function LoginScreen() {
     password: '',
     form: '',
   });
+
+  useEffect(() => {
+    if (!signInBlockedMessage) return;
+    setErrors((e) => ({ ...e, form: signInBlockedMessage }));
+    clearSignInBlockedMessage();
+  }, [signInBlockedMessage, clearSignInBlockedMessage]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
