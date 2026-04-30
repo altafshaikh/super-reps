@@ -167,3 +167,6 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_date ON workout_sessions(user_id, s
 CREATE INDEX IF NOT EXISTS idx_sets_session       ON workout_sets(session_id);
 CREATE INDEX IF NOT EXISTS idx_prs_user           ON personal_records(user_id, exercise_id);
 CREATE INDEX IF NOT EXISTS idx_exercises_slug     ON exercises(slug);
+
+-- After auth is live: run trigger-handle-new-user.sql in the SQL Editor so each auth.users
+-- row gets a public.users row (email confirmation + client RLS timing).

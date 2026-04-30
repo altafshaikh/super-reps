@@ -144,7 +144,10 @@ export default function SignupScreen() {
     const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
-      ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
+      options: {
+        data: { username: cleanUsername },
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      },
     });
     if (error) {
       setLoading(false);
@@ -186,15 +189,31 @@ export default function SignupScreen() {
       return;
     }
 
-    const { error: profileError } = await supabase.from('users').upsert(
-      {
-        id: data.user.id,
-        email: cleanEmail,
-        username: cleanUsername,
-        plan: 'free',
-      },
-      { onConflict: 'id' },
-    );
+    const profilePayload = {
+      id: data.user.id,
+      email: cleanEmail,
+      username: cleanUsername,
+      plan: 'free' as const,
+    };
+
+    let profileError: { message?: string; code?: string | number; details?: string } | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await supabase.auth.getSession();
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const { error: upErr } = await supabase
+        .from('users')
+        .upsert(profilePayload, { onConflict: 'id' });
+      if (!upErr) {
+        profileError = null;
+        break;
+      }
+      profileError = upErr;
+      const blob = `${upErr.code ?? ''} ${upErr.message ?? ''}`.toLowerCase();
+      const rls = String(upErr.code) === '42501' || blob.includes('row-level security');
+      if (!rls) break;
+    }
 
     if (profileError) {
       await supabase.auth.signOut();
