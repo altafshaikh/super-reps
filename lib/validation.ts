@@ -5,8 +5,30 @@ export function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
+/** Login field: explicit email vs handle (no `@` = username rules). */
+export function classifyLoginIdentifier(raw: string): 'email' | 'username' | 'invalid_email' {
+  const t = raw.trim();
+  if (!t) return 'username';
+  if (t.includes('@')) {
+    return isValidEmail(t) ? 'email' : 'invalid_email';
+  }
+  return 'username';
+}
+
 const USERNAME_MIN_LEN = 3;
 const USERNAME_MAX_LEN = 30;
+
+const NAME_MAX_LEN = 60;
+
+/** Full name: non-empty, no leading/trailing whitespace, reasonable length. */
+export function validateName(raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return 'Please enter your full name.';
+  if (v.length < 2) return 'Name must be at least 2 characters.';
+  if (v.length > NAME_MAX_LEN) return `Name must be at most ${NAME_MAX_LEN} characters.`;
+  if (/[0-9]/.test(v)) return 'Name should not contain numbers.';
+  return null;
+}
 
 /** Client-side username rules (aligned with public.handle-style IDs). */
 export function validateUsername(raw: string): string | null {

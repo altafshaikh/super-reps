@@ -95,7 +95,7 @@ export default function HomeScreen() {
     return 'Good evening';
   })();
 
-  const userName = user?.username ?? user?.email?.split('@')[0] ?? 'Lifter';
+  const userName = user?.name ?? user?.username ?? user?.email?.split('@')[0] ?? 'Lifter';
   const initial = userName[0]?.toUpperCase() ?? 'U';
 
   const totalVolStr = weeklyVol >= 1000

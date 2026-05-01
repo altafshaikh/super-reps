@@ -14,7 +14,7 @@ test.describe('signed-in journey', () => {
     const { email, password } = creds;
 
     await page.goto('/login');
-    await page.getByTestId('login-email').fill(email);
+    await page.getByTestId('login-identifier').fill(email);
     await page.getByTestId('login-password').fill(password);
     await page.getByTestId('login-submit').click();
 
@@ -31,6 +31,6 @@ test.describe('signed-in journey', () => {
     await expect(page.getByText('Settings')).toBeVisible();
 
     await page.getByTestId('settings-sign-out').click();
-    await expect(page.getByTestId('login-email')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('login-identifier')).toBeVisible({ timeout: 15_000 });
   });
 });

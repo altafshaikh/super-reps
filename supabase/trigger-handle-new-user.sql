@@ -1,8 +1,5 @@
 -- Creates a matching row in public.users whenever a user is inserted into auth.users.
 -- Run this in the Supabase SQL Editor after schema.sql (one-time per project).
---
--- Fixes: (1) email-confirmation signups where the client never gets a session to upsert,
--- (2) races where the first client upsert runs before PostgREST sees the new JWT.
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
@@ -12,21 +9,24 @@ SET search_path = public
 AS $$
 DECLARE
   uname text;
+  uname_display text;
 BEGIN
-  uname := NULLIF(LOWER(TRIM(NEW.raw_user_meta_data ->> 'username')), '');
+  uname        := NULLIF(LOWER(TRIM(NEW.raw_user_meta_data ->> 'username')), '');
+  uname_display := NULLIF(TRIM(NEW.raw_user_meta_data ->> 'name'), '');
 
   BEGIN
-    INSERT INTO public.users (id, email, username, plan)
+    INSERT INTO public.users (id, email, username, name, plan)
     VALUES (
       NEW.id,
       COALESCE(NEW.email, ''),
       uname,
+      uname_display,
       'free'
     );
   EXCEPTION
     WHEN unique_violation THEN
-      INSERT INTO public.users (id, email, plan)
-      VALUES (NEW.id, COALESCE(NEW.email, ''), 'free')
+      INSERT INTO public.users (id, email, name, plan)
+      VALUES (NEW.id, COALESCE(NEW.email, ''), uname_display, 'free')
       ON CONFLICT (id) DO NOTHING;
   END;
 

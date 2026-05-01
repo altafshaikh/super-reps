@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email       TEXT NOT NULL,
   username    TEXT UNIQUE,
+  name        TEXT,
   plan        TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
   goal        TEXT CHECK (goal IN ('hypertrophy', 'strength', 'endurance', 'recomp')),
   level       TEXT CHECK (level IN ('beginner', 'intermediate', 'advanced')),
@@ -13,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Existing databases: ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT;
 
 -- Exercises table (seeded, users can add custom)
 CREATE TABLE IF NOT EXISTS exercises (
@@ -170,3 +173,5 @@ CREATE INDEX IF NOT EXISTS idx_exercises_slug     ON exercises(slug);
 
 -- After auth is live: run trigger-handle-new-user.sql in the SQL Editor so each auth.users
 -- row gets a public.users row (email confirmation + client RLS timing).
+--
+-- For username-based login: run rpc-login-identifier-to-email.sql (SECURITY DEFINER RPC for anon).
