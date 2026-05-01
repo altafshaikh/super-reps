@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -72,13 +74,14 @@ function totalExerciseCount(routine: Routine): number {
 
 export default function WorkoutsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useUserStore();
   const { startWorkout, isActive } = useWorkoutStore();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(true);
   const [libraryOpen, setLibraryOpen] = useState(false);
 
-  useEffect(() => {
+  const loadRoutines = useCallback(() => {
     if (!user) {
       setRoutines([]);
       setRoutinesLoading(false);
@@ -107,6 +110,8 @@ export default function WorkoutsScreen() {
       cancelled = true;
     };
   }, [user]);
+
+  useFocusEffect(loadRoutines);
 
   const handleStartEmpty = () => {
     startWorkout();
@@ -146,7 +151,7 @@ export default function WorkoutsScreen() {
           !routinesLoading && !hasRoutines && { flexGrow: 1 },
         ]}
       >
-        <View style={s.header}>
+        <View style={[s.header, { paddingTop: insets.top + 16 }]}>
           <Text style={s.pageTitle}>Workouts</Text>
           <Text style={s.subtitle}>Routines, quick start, and exercise library</Text>
         </View>
@@ -257,7 +262,7 @@ export default function WorkoutsScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
   scrollContent: { paddingBottom: 110, paddingHorizontal: 16 },
-  header: { paddingTop: 56, paddingBottom: 20 },
+  header: { paddingBottom: 20 },
   pageTitle: { fontSize: 30, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: COLORS.ink3, marginTop: 6, lineHeight: 20 },
   loadingBox: {

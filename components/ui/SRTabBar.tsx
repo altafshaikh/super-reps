@@ -57,6 +57,20 @@ function IconAI({ active }: { active: boolean }) {
   );
 }
 
+function IconProgress({ active }: { active: boolean }) {
+  const c = active ? COLORS.ink : COLORS.ink3;
+  const sw = active ? 2 : 1.5;
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 17l4-5 4 3 4-6 4 3"
+        stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"
+      />
+      <Path d="M3 21h18" stroke={c} strokeWidth={sw} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 function IconProfile({ active }: { active: boolean }) {
   const c = active ? COLORS.ink : COLORS.ink3;
   const sw = active ? 2 : 1.5;
@@ -76,6 +90,7 @@ const TABS = [
   { id: 'index',    label: 'Home',     Icon: IconHome },
   { id: 'workouts', label: 'Workouts', Icon: IconWorkouts },
   { id: 'ai',       label: 'AI Build', Icon: IconAI },
+  { id: 'progress', label: 'Progress', Icon: IconProgress },
   { id: 'profile',  label: 'Profile',  Icon: IconProfile },
 ];
 

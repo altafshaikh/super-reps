@@ -13,6 +13,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -50,7 +51,10 @@ function weeklyBars(sessions: SessionRow[], weeks: number, metric: 'duration' | 
   const bars: { label: string; value: number; isCurrent: boolean }[] = [];
   for (let i = 0; i < weeks; i++) {
     const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 7 * (weeks - i) - weekStart.getDay());
+    // Align to Monday regardless of locale (getDay: 0=Sun,1=Mon..6=Sat)
+    const dayOfWeek = weekStart.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    weekStart.setDate(weekStart.getDate() - daysToMonday - 7 * (weeks - i - 1));
     weekStart.setHours(0, 0, 0, 0);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
@@ -96,7 +100,8 @@ const PROFILE_SESSION_LIMIT = 500;
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useUserStore();
+  const insets = useSafeAreaInsets();
+  const { user, signOut } = useUserStore();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [prDerived, setPrDerived] = useState<{
     bests: PersonalRecord[];
@@ -105,6 +110,7 @@ export default function ProfileScreen() {
   const [chartMetric, setChartMetric] = useState<'duration' | 'volume' | 'reps'>('duration');
   const [menuSession, setMenuSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [routineCount, setRoutineCount] = useState(0);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -122,6 +128,12 @@ export default function ProfileScreen() {
     ]);
     if (sessRes.data) setSessions(sessRes.data as SessionRow[]);
     setPrDerived(derivePersonalBestsFromFlatRows(flatSets));
+
+    const { count } = await supabase
+      .from('routines')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+    setRoutineCount(count ?? 0);
     setLoading(false);
   }, [user]);
 
@@ -132,10 +144,29 @@ export default function ProfileScreen() {
   );
 
   const handle = user?.username ?? user?.email?.split('@')[0] ?? 'lifter';
-  const displayName = user?.username
+  const displayName = user?.name || (user?.username
     ? user.username.replace(/_/g, ' ')
-    : (user?.email?.split('@')[0] ?? 'Lifter');
+    : (user?.email?.split('@')[0] ?? 'Lifter'));
   const initial = displayName[0]?.toUpperCase() ?? 'U';
+
+  const streak = useMemo(() => {
+    if (!sessions.length) return 0;
+    let s = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 60; i++) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      const has = sessions.some(ws => {
+        const d = new Date(ws.started_at);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === day.getTime();
+      });
+      if (has) s++;
+      else if (i > 0) break;
+    }
+    return s;
+  }, [sessions]);
 
   const prCountBySession = prDerived.prCountBySession;
 
@@ -187,7 +218,7 @@ export default function ProfileScreen() {
       <StatusBar barStyle="light-content" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
         {/* Top bar */}
-        <View style={s.topBar}>
+        <View style={[s.topBar, { paddingTop: insets.top + 8 }]}>
           <Text style={s.handle} numberOfLines={1}>
             {handle}
           </Text>
@@ -214,21 +245,21 @@ export default function ProfileScreen() {
             <Text style={s.avatarSmText}>{initial}</Text>
           </View>
           <View style={s.profileMain}>
-            <Text style={s.displayName}>{displayName}</Text>
+            <Text style={s.displayName} numberOfLines={1}>{displayName}</Text>
             <View style={s.statsRow}>
               <View style={s.statCol}>
+                <Text style={s.statVal}>{streak > 0 ? `${streak} 🔥` : '0'}</Text>
+                <Text style={s.statLab}>Streak</Text>
+              </View>
+              <View style={s.statSep} />
+              <View style={s.statCol}>
                 <Text style={s.statVal}>{sessions.length}</Text>
-                <Text style={s.statLab}>Workouts</Text>
+                <Text style={s.statLab}>Sessions</Text>
               </View>
               <View style={s.statSep} />
               <View style={s.statCol}>
-                <Text style={s.statVal}>—</Text>
-                <Text style={s.statLab}>Followers</Text>
-              </View>
-              <View style={s.statSep} />
-              <View style={s.statCol}>
-                <Text style={s.statVal}>—</Text>
-                <Text style={s.statLab}>Following</Text>
+                <Text style={s.statVal}>{routineCount}</Text>
+                <Text style={s.statLab}>Routines</Text>
               </View>
             </View>
           </View>
@@ -274,6 +305,31 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </SRCard>
+
+        {/* Training settings card */}
+        <Text style={[s.sectionKicker, { marginTop: 8 }]}>Training</Text>
+        <SRCard style={{ marginBottom: 4 }}>
+          {[
+            { label: 'Goal', value: user?.goal ? user.goal.charAt(0).toUpperCase() + user.goal.slice(1) : 'Not set', href: '/(auth)/onboarding/goal' as const },
+            { label: 'Experience', value: user?.level ? user.level.charAt(0).toUpperCase() + user.level.slice(1) : 'Not set', href: '/(auth)/onboarding/level' as const },
+            { label: 'Equipment', value: (user?.equipment ?? []).join(', ') || 'Not set', href: '/(auth)/onboarding/equipment' as const },
+          ].map((row, i, arr) => (
+            <View key={row.label}>
+              {i > 0 && <SRDivider indent={16} />}
+              <TouchableOpacity
+                style={s.settingRow}
+                activeOpacity={0.7}
+                onPress={() => router.push(row.href)}
+              >
+                <Text style={s.settingLabel}>{row.label}</Text>
+                <View style={s.settingRight}>
+                  <Text style={s.settingValue} numberOfLines={1}>{row.value}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.ink3} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          ))}
         </SRCard>
 
         {/* Data & import */}
@@ -418,6 +474,39 @@ export default function ProfileScreen() {
           })
         )}
 
+        {/* Account card */}
+        <Text style={[s.sectionKicker, { marginTop: 8 }]}>Account</Text>
+        <SRCard style={{ marginBottom: 4 }}>
+          <TouchableOpacity
+            style={s.settingRow}
+            activeOpacity={0.7}
+            onPress={() => router.push('/profile/settings')}
+          >
+            <Text style={s.settingLabel}>Edit Profile</Text>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.ink3} />
+          </TouchableOpacity>
+          <SRDivider indent={16} />
+          <TouchableOpacity
+            style={s.settingRow}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                if (typeof window !== 'undefined' && window.confirm('Sign out?')) void signOut();
+                return;
+              }
+              Alert.alert('Sign out?', undefined, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
+              ]);
+            }}
+          >
+            <Text style={[s.settingLabel, { color: COLORS.red }]}>Sign Out</Text>
+          </TouchableOpacity>
+        </SRCard>
+
+        {/* Footer */}
+        <Text style={s.footer}>SuperReps v1.0 · Expo SDK 54 · Supabase + Groq</Text>
+
       </ScrollView>
 
       <Modal visible={menuSession !== null} transparent animationType="fade" onRequestClose={() => setMenuSession(null)}>
@@ -514,7 +603,6 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 52,
     paddingBottom: 12,
     paddingHorizontal: 6,
   },
@@ -711,4 +799,15 @@ const s = StyleSheet.create({
   },
   sheetRowTxt: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
   sheetCancel: { alignItems: 'center', paddingVertical: 14 },
+  settingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 16,
+  },
+  settingLabel: { fontSize: 15, fontWeight: '600', color: COLORS.ink },
+  settingRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' },
+  settingValue: { fontSize: 14, color: COLORS.ink3, maxWidth: 160 },
+  footer: {
+    textAlign: 'center', fontSize: 11, color: COLORS.ink3,
+    marginTop: 12, marginBottom: 8, paddingHorizontal: 16,
+  },
 });

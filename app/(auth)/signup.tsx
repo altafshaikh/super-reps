@@ -212,6 +212,7 @@ export default function SignupScreen() {
                 autoCorrect={false}
                 autoComplete="name"
                 textContentType="name"
+                autoFocus
               />
               {!!errors.name && <Text style={s.fieldError}>{errors.name}</Text>}
             </View>
@@ -294,7 +295,7 @@ export default function SignupScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flexGrow: 1 },
+  scroll: { flexGrow: 1, paddingBottom: 60 },
   container: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48 },
   logoBlock: { marginBottom: 40, alignItems: 'center' },
   appName: { fontSize: 40, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },

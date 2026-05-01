@@ -234,12 +234,13 @@ export default function LoginScreen() {
                 value={identifier}
                 onChangeText={(t) => {
                   setIdentifier(t);
-                  setErrors((e) => ({ ...e, form: '', ...(e.identifier ? { identifier: '' } : {}) }));
+                  setErrors((e) => ({ ...e, form: '', identifier: '' }));
                 }}
                 keyboardType="default"
                 autoCapitalize="none"
                 autoComplete="username"
                 textContentType="username"
+                autoFocus
               />
               {!!errors.identifier && <Text style={s.fieldError}>{errors.identifier}</Text>}
             </View>
@@ -293,7 +294,7 @@ export default function LoginScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flexGrow: 1 },
+  scroll: { flexGrow: 1, paddingBottom: 60 },
   container: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48 },
   logoBlock: { marginBottom: 40, alignItems: 'center' },
   appName: { fontSize: 40, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },

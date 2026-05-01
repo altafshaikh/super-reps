@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
@@ -23,15 +24,18 @@ function sessionRepsFromSets(s: WorkoutSession & { sets?: { reps: number }[] }):
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useUserStore();
   const { isActive } = useWorkoutStore();
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyVol, setWeeklyVol] = useState(0);
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
+    setLoading(true);
     const [sessionsRes, prFlat] = await Promise.all([
       supabase
         .from('workout_sessions')
@@ -56,6 +60,7 @@ export default function HomeScreen() {
     }
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
+    setLoading(false);
   }, [user]);
 
   useFocusEffect(
@@ -107,12 +112,20 @@ export default function HomeScreen() {
     [personalBests],
   );
 
+  if (loading && recentSessions.length === 0) {
+    return (
+      <View style={[s.root, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color={COLORS.blue} size="large" />
+      </View>
+    );
+  }
+
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         {/* Header card */}
-        <SRCard style={s.headerCard}>
+        <SRCard style={{ ...s.headerCard, marginTop: insets.top + 14 }}>
           {/* Greeting row */}
           <View style={s.greetRow}>
             <View style={{ flex: 1 }}>
@@ -232,7 +245,6 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
   headerCard: {
     margin: 14,
-    marginTop: 56,
     borderRadius: 20,
   },
   greetRow: {
