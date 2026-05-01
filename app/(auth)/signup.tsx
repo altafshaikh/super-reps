@@ -347,6 +347,7 @@ export default function SignupScreen() {
             <View>
               <Text style={s.fieldLabel}>Username</Text>
               <TextInput
+                testID="signup-username"
                 style={[s.input, errors.username ? s.inputError : null]}
                 placeholder="lifter42"
                 placeholderTextColor={COLORS.ink3}
@@ -368,6 +369,7 @@ export default function SignupScreen() {
             <View>
               <Text style={s.fieldLabel}>Email</Text>
               <TextInput
+                testID="signup-email"
                 style={[s.input, errors.email ? s.inputError : null]}
                 placeholder="you@example.com"
                 placeholderTextColor={COLORS.ink3}
@@ -388,6 +390,7 @@ export default function SignupScreen() {
             <View>
               <Text style={s.fieldLabel}>Password</Text>
               <TextInput
+                testID="signup-password"
                 style={[s.input, errors.password ? s.inputError : null]}
                 placeholder="8+ chars, letter & number"
                 placeholderTextColor={COLORS.ink3}
@@ -408,7 +411,13 @@ export default function SignupScreen() {
               />
               {!!errors.password && <Text style={s.fieldError}>{errors.password}</Text>}
             </View>
-            <TouchableOpacity style={s.primaryBtn} onPress={handleSignup} disabled={loading} activeOpacity={0.85}>
+            <TouchableOpacity
+              testID="signup-submit"
+              style={s.primaryBtn}
+              onPress={handleSignup}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
               {loading ? <ActivityIndicator color={COLORS.bg} /> : (
                 <Text style={s.primaryBtnText}>Create Account</Text>
               )}

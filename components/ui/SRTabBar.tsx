@@ -106,6 +106,7 @@ export function SRTabBar({ state, navigation }: SRTabBarProps) {
         return (
           <TouchableOpacity
             key={id}
+            testID={`tab-${id}`}
             onPress={onPress}
             activeOpacity={0.7}
             style={styles.tab}

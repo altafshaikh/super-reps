@@ -56,6 +56,7 @@ export default function OnboardingGoal() {
 
       <View style={s.footer}>
         <TouchableOpacity
+          testID="onboarding-goal-continue"
           onPress={handleNext}
           disabled={!selected}
           style={[s.continueBtn, !selected && s.continueBtnDisabled]}

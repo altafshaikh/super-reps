@@ -155,6 +155,7 @@ export default function LoginScreen() {
             <View>
               <Text style={s.fieldLabel}>Email</Text>
               <TextInput
+                testID="login-email"
                 style={[s.input, errors.email ? s.inputError : null]}
                 placeholder="you@example.com"
                 placeholderTextColor={COLORS.ink3}
@@ -176,6 +177,7 @@ export default function LoginScreen() {
             <View>
               <Text style={s.fieldLabel}>Password</Text>
               <TextInput
+                testID="login-password"
                 style={[s.input, errors.password ? s.inputError : null]}
                 placeholder="••••••••"
                 placeholderTextColor={COLORS.ink3}
@@ -196,7 +198,13 @@ export default function LoginScreen() {
               />
               {!!errors.password && <Text style={s.fieldError}>{errors.password}</Text>}
             </View>
-            <TouchableOpacity style={s.primaryBtn} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
+            <TouchableOpacity
+              testID="login-submit"
+              style={s.primaryBtn}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
               {loading ? <ActivityIndicator color={COLORS.bg} /> : (
                 <Text style={s.primaryBtnText}>Sign In</Text>
               )}

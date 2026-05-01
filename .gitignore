@@ -40,6 +40,11 @@ yarn-error.*
 .env*.local
 .env
 
+# Playwright
+/playwright-report/
+/test-results/
+/blob-report/
+
 # typescript
 *.tsbuildinfo
 

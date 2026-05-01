@@ -6,13 +6,17 @@ export default function AuthLayout() {
   const segments = useSegments();
 
   if (user) {
-    const needsOnboarding = !user.goal || !user.level;
+    const needsGoalOrLevel = !user.goal || !user.level;
+    const needsEquipment = !user.equipment?.length;
     const onOnboarding = segments.some((s) => s === 'onboarding');
 
-    if (needsOnboarding && !onOnboarding) {
+    if (needsGoalOrLevel && !onOnboarding) {
       return <Redirect href="/(auth)/onboarding/goal" />;
     }
-    if (!needsOnboarding) {
+    if (!needsGoalOrLevel && needsEquipment && !onOnboarding) {
+      return <Redirect href="/(auth)/onboarding/equipment" />;
+    }
+    if (!needsGoalOrLevel && !needsEquipment) {
       return <Redirect href="/(tabs)" />;
     }
   }

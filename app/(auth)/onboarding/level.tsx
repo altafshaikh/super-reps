@@ -58,6 +58,7 @@ export default function OnboardingLevel() {
 
       <View style={s.footer}>
         <TouchableOpacity
+          testID="onboarding-level-continue"
           onPress={handleNext}
           disabled={!selected}
           style={[s.continueBtn, !selected && s.continueBtnDisabled]}

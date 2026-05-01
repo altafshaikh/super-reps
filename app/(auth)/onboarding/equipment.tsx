@@ -59,6 +59,7 @@ export default function OnboardingEquipment() {
 
       <View style={s.footer}>
         <TouchableOpacity
+          testID="onboarding-equipment-finish"
           onPress={handleFinish}
           disabled={selected.length === 0 || loading}
           style={[s.finishBtn, selected.length === 0 && s.finishBtnDisabled]}

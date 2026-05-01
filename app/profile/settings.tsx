@@ -226,7 +226,12 @@ export default function ProfileSettingsScreen() {
           style={{ alignSelf: 'center', marginTop: 8 }}
         />
 
-        <TouchableOpacity onPress={handleSignOut} style={s.signOut} activeOpacity={0.75}>
+        <TouchableOpacity
+          testID="settings-sign-out"
+          onPress={handleSignOut}
+          style={s.signOut}
+          activeOpacity={0.75}
+        >
           <Ionicons name="log-out-outline" size={20} color={COLORS.red} style={{ marginRight: 8 }} />
           <Text style={s.signOutTxt}>Sign out</Text>
         </TouchableOpacity>

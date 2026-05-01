@@ -198,7 +198,11 @@ export default function ProfileScreen() {
             <TouchableOpacity onPress={shareProfile} hitSlop={hitSlop}>
               <Ionicons name="share-outline" size={22} color={COLORS.ink} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/profile/settings')} hitSlop={hitSlop}>
+            <TouchableOpacity
+              testID="profile-open-settings"
+              onPress={() => router.push('/profile/settings')}
+              hitSlop={hitSlop}
+            >
               <Ionicons name="settings-outline" size={22} color={COLORS.ink} />
             </TouchableOpacity>
           </View>

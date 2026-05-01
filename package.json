@@ -13,7 +13,10 @@
     "deploy": "npm run build:web && vercel deploy --prod",
     "db:setup": "node --env-file=.env scripts/db-setup.mjs",
     "typecheck": "tsc --noEmit",
-    "generate:assets": "node scripts/generate-brand-assets.mjs"
+    "generate:assets": "node scripts/generate-brand-assets.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -51,7 +54,9 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/react": "~19.1.0",
+    "dotenv": "^16.5.0",
     "postgres": "^3.4.9",
     "sharp": "^0.34.5",
     "typescript": "~5.9.2"
