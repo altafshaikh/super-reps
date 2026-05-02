@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, FlatList, Modal, ActivityIndicator, Platform, StyleSheet,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -423,7 +424,6 @@ export default function ActiveWorkoutScreen() {
             <TouchableOpacity style={s.addSetBtn} onPress={() => addSet(exercise.id)}>
               <Text style={s.addSetTxt}>+ Add Set</Text>
             </TouchableOpacity>
-            <Text style={s.longPressTip}>Hold a set row to remove it</Text>
           </View>
         ))}
 
@@ -498,97 +498,133 @@ function InlineSetRow({
   isLast: boolean;
 }) {
   const [rpeExpanded, setRpeExpanded] = useState(false);
+  const swipeableRef = useRef<Swipeable>(null);
+  const checkScale = useSharedValue(1);
+  const prevCompleted = useRef(set.completed);
+
+  useEffect(() => {
+    if (!prevCompleted.current && set.completed) {
+      checkScale.value = withSpring(1.3, { damping: 8, stiffness: 300 }, () => {
+        checkScale.value = withSpring(1, { damping: 12, stiffness: 300 });
+      });
+    }
+    prevCompleted.current = set.completed;
+  }, [set.completed]);
+
+  const checkAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
+  }));
+
+  const handleSwipeDelete = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    onRemove(exerciseId, set.id);
+  }, [exerciseId, set.id, onRemove]);
+
+  const renderRightActions = () => (
+    <View style={s.deleteAction}>
+      <Ionicons name="trash-outline" size={18} color="white" />
+      <Text style={s.deleteActionText}>Delete</Text>
+    </View>
+  );
 
   return (
-    <View>
-      <TouchableOpacity
-        activeOpacity={1}
-        onLongPress={() => onRemove(exerciseId, set.id)}
-        style={[
-          s.setRow,
-          set.completed && s.setRowDone,
-          !isLast && s.setRowBorder,
-        ]}
-      >
-        <Text style={s.setNum}>{index + 1}</Text>
-
-        {/* Weight */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          {prevWeight != null && <Text style={s.setPrev}>{formatWeight(prevWeight)}</Text>}
-          <TextInput
-            style={[s.setInput, set.completed && s.setInputDone]}
-            keyboardType="decimal-pad"
-            value={set.weight_kg > 0 ? formatWeight(set.weight_kg) : ''}
-            placeholder="0"
-            placeholderTextColor={COLORS.textDim}
-            onChangeText={v => onUpdate(exerciseId, set.id, { weight_kg: parseFloat(v) || 0 })}
-            editable={!set.completed}
-          />
-        </View>
-
-        {/* Reps */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          {prevReps != null && <Text style={s.setPrev}>{prevReps}</Text>}
-          <TextInput
-            style={[s.setInput, set.completed && s.setInputDone]}
-            keyboardType="number-pad"
-            value={set.reps > 0 ? String(set.reps) : ''}
-            placeholder="0"
-            placeholderTextColor={COLORS.textDim}
-            onChangeText={v => onUpdate(exerciseId, set.id, { reps: parseInt(v) || 0 })}
-            editable={!set.completed}
-          />
-        </View>
-
-        {/* RPE expander */}
-        <TouchableOpacity
-          style={[s.rpeToggle, set.rpe != null && s.rpeToggleActive]}
-          onPress={() => setRpeExpanded(v => !v)}
-          disabled={set.completed}
+    <Swipeable
+      ref={swipeableRef}
+      renderRightActions={renderRightActions}
+      rightThreshold={60}
+      onSwipeableOpen={handleSwipeDelete}
+      enabled={!set.completed}
+    >
+      <View>
+        <View
+          style={[
+            s.setRow,
+            set.completed && s.setRowDone,
+            !isLast && s.setRowBorder,
+          ]}
         >
-          <Text style={[s.rpeToggleTxt, set.rpe != null && s.rpeToggleTxtActive]}>
-            {set.rpe != null ? String(set.rpe) : '+'}
-          </Text>
-        </TouchableOpacity>
+          <Text style={[s.setNum, set.completed && s.setNumDone]}>{index + 1}</Text>
 
-        {/* Checkmark */}
-        <TouchableOpacity
-          style={[s.setCheck, set.completed && s.setCheckDone]}
-          onPress={() => {
-            if (set.completed) {
-              onUpdate(exerciseId, set.id, { completed: false });
-            } else {
-              onComplete(exerciseId, set.id);
-            }
-          }}
-        >
-          {set.completed && <Ionicons name="checkmark" size={18} color="white" />}
-        </TouchableOpacity>
-      </TouchableOpacity>
+          {/* Weight */}
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            {prevWeight != null && <Text style={s.setPrev}>{formatWeight(prevWeight)}</Text>}
+            <TextInput
+              style={[s.setInput, set.completed && s.setInputDone]}
+              keyboardType="decimal-pad"
+              value={set.weight_kg > 0 ? formatWeight(set.weight_kg) : ''}
+              placeholder="0"
+              placeholderTextColor={COLORS.textDim}
+              onChangeText={v => onUpdate(exerciseId, set.id, { weight_kg: parseFloat(v) || 0 })}
+              editable={!set.completed}
+            />
+          </View>
 
-      {/* RPE picker row */}
-      {rpeExpanded && !set.completed && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={s.rpePickerRow}
-          contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingVertical: 6 }}
-        >
-          {RPE_OPTIONS.map(v => (
+          {/* Reps */}
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            {prevReps != null && <Text style={s.setPrev}>{prevReps}</Text>}
+            <TextInput
+              style={[s.setInput, set.completed && s.setInputDone]}
+              keyboardType="number-pad"
+              value={set.reps > 0 ? String(set.reps) : ''}
+              placeholder="0"
+              placeholderTextColor={COLORS.textDim}
+              onChangeText={v => onUpdate(exerciseId, set.id, { reps: parseInt(v) || 0 })}
+              editable={!set.completed}
+            />
+          </View>
+
+          {/* RPE expander */}
+          <TouchableOpacity
+            style={[s.rpeToggle, set.rpe != null && s.rpeToggleActive]}
+            onPress={() => setRpeExpanded(v => !v)}
+            disabled={set.completed}
+          >
+            <Text style={[s.rpeToggleTxt, set.rpe != null && s.rpeToggleTxtActive]}>
+              {set.rpe != null ? String(set.rpe) : '+'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Checkmark */}
+          <Animated.View style={checkAnimStyle}>
             <TouchableOpacity
-              key={v}
-              style={[s.rpePill, set.rpe === v && s.rpePillActive]}
+              style={[s.setCheck, set.completed && s.setCheckDone]}
               onPress={() => {
-                onUpdate(exerciseId, set.id, { rpe: set.rpe === v ? null : v });
-                if (set.rpe !== v) setRpeExpanded(false);
+                if (set.completed) {
+                  onUpdate(exerciseId, set.id, { completed: false });
+                } else {
+                  onComplete(exerciseId, set.id);
+                }
               }}
             >
-              <Text style={[s.rpePillTxt, set.rpe === v && s.rpePillTxtActive]}>{v}</Text>
+              {set.completed && <Ionicons name="checkmark" size={18} color="white" />}
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-    </View>
+          </Animated.View>
+        </View>
+
+        {/* RPE picker row */}
+        {rpeExpanded && !set.completed && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={s.rpePickerRow}
+            contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingVertical: 6 }}
+          >
+            {RPE_OPTIONS.map(v => (
+              <TouchableOpacity
+                key={v}
+                style={[s.rpePill, set.rpe === v && s.rpePillActive]}
+                onPress={() => {
+                  onUpdate(exerciseId, set.id, { rpe: set.rpe === v ? null : v });
+                  if (set.rpe !== v) setRpeExpanded(false);
+                }}
+              >
+                <Text style={[s.rpePillTxt, set.rpe === v && s.rpePillTxtActive]}>{v}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </Swipeable>
   );
 }
 
@@ -665,6 +701,12 @@ const s = StyleSheet.create({
   setRowDone: { backgroundColor: `${COLORS.green}12` },
   setRowBorder: { borderBottomWidth: 0.5, borderBottomColor: `${COLORS.border}` },
   setNum: { color: COLORS.textDim, fontSize: 14, fontWeight: '500', width: 32 },
+  setNumDone: { color: COLORS.ink4 },
+  deleteAction: {
+    backgroundColor: COLORS.red, justifyContent: 'center', alignItems: 'center',
+    width: 80, flexDirection: 'row', gap: 4,
+  },
+  deleteActionText: { color: 'white', fontSize: 12, fontWeight: '700' },
   setPrev: { color: COLORS.textDim, fontSize: 10, marginBottom: 2 },
   setInput: {
     color: COLORS.ink, fontSize: 16, fontWeight: '700',

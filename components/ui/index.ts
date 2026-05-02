@@ -11,3 +11,4 @@ export { ExerciseCatalog } from './ExerciseCatalog';
 export { SRTabBar } from './SRTabBar';
 export { ExerciseDetailSheet } from './ExerciseDetailSheet';
 export { HumanBodySVG } from './HumanBodySVG';
+export { PressableScale } from './PressableScale';

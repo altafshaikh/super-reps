@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import Animated, { useSharedValue, withDelay, withTiming, useAnimatedProps } from 'react-native-reanimated';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import { COLORS } from '@/constants';
+import { useReduceMotion } from '@/context/MotionContext';
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 const CHART_H = 100;
 const LABEL_H = 16;
@@ -8,6 +12,43 @@ const LABEL_H = 16;
 interface BarChartProps {
   data: { label: string; value: number }[];
   width: number;
+}
+
+function AnimatedBar({
+  x, targetBarH, barW, isCurrent, delayMs,
+}: {
+  x: number;
+  targetBarH: number;
+  barW: number;
+  isCurrent: boolean;
+  delayMs: number;
+}) {
+  const reduceMotion = useReduceMotion();
+  const barH = useSharedValue(reduceMotion ? targetBarH : 0);
+
+  useEffect(() => {
+    if (!reduceMotion) {
+      barH.value = withDelay(delayMs, withTiming(targetBarH, { duration: 400 }));
+    } else {
+      barH.value = targetBarH;
+    }
+  }, [targetBarH, reduceMotion]);
+
+  const animProps = useAnimatedProps(() => ({
+    y: CHART_H - barH.value,
+    height: Math.max(barH.value, 0),
+  }));
+
+  return (
+    <AnimatedRect
+      animatedProps={animProps}
+      x={x}
+      width={barW}
+      rx={3}
+      fill={isCurrent ? COLORS.blue : COLORS.ink3}
+      fillOpacity={isCurrent ? 1 : 0.3}
+    />
+  );
 }
 
 export function BarChart({ data, width }: BarChartProps) {
@@ -25,14 +66,12 @@ export function BarChart({ data, width }: BarChartProps) {
         const isCurrent = i === data.length - 1;
         return (
           <React.Fragment key={i}>
-            <Rect
+            <AnimatedBar
               x={x}
-              y={CHART_H - barH}
-              width={barW}
-              height={barH}
-              rx={3}
-              fill={isCurrent ? COLORS.blue : COLORS.ink3}
-              fillOpacity={isCurrent ? 1 : 0.3}
+              targetBarH={barH}
+              barW={barW}
+              isCurrent={isCurrent}
+              delayMs={i * 40}
             />
             <SvgText
               x={x + barW / 2}

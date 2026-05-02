@@ -12,9 +12,11 @@ import {
   StyleSheet,
   StatusBar,
 } from 'react-native';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useReduceMotion } from '@/context/MotionContext';
 import { supabase } from '@/lib/supabase';
 import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
@@ -55,6 +57,7 @@ export default function AITab() {
   const [saving, setSaving] = useState(false);
   const [displayedUserPrompt, setDisplayedUserPrompt] = useState<string | null>(null);
   const lastGenerationPrompt = useRef('');
+  const reduceMotion = useReduceMotion();
 
   const scrollToEnd = useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -242,22 +245,32 @@ export default function AITab() {
           onContentSizeChange={scrollToEnd}
         >
           {/* AI intro */}
-          <View style={s.aiBubbleWrap}>
+          <Animated.View
+            entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
+            style={s.aiBubbleWrap}
+          >
             <View style={s.aiBubble}>
               <Text style={s.aiBubbleText}>{INTRO_AI}</Text>
             </View>
-          </View>
+          </Animated.View>
 
           {displayedUserPrompt ? (
-            <View style={s.userBubbleWrap}>
+            <Animated.View
+              key={displayedUserPrompt}
+              entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
+              style={s.userBubbleWrap}
+            >
               <View style={s.userBubble}>
                 <Text style={s.userBubbleText}>{displayedUserPrompt}</Text>
               </View>
-            </View>
+            </Animated.View>
           ) : null}
 
           {builderState === 'loading' ? (
-            <View style={s.aiBubbleWrap}>
+            <Animated.View
+              entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
+              style={s.aiBubbleWrap}
+            >
               <View style={s.aiBubble}>
                 {streamingText ? (
                   <Text style={s.aiBubbleText}>{streamingText}</Text>
@@ -268,28 +281,35 @@ export default function AITab() {
                   </View>
                 )}
               </View>
-            </View>
+            </Animated.View>
           ) : null}
 
           {builderState === 'error' && errorMessage ? (
-            <View style={s.aiBubbleWrap}>
+            <Animated.View
+              entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
+              style={s.aiBubbleWrap}
+            >
               <View style={[s.aiBubble, s.errorBubble]}>
                 <Text style={s.errorBubbleText}>{errorMessage}</Text>
                 <TouchableOpacity onPress={() => void handleRegenerate()} style={s.retryChip}>
                   <Text style={s.retryChipText}>Try again</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           ) : null}
 
           {showRoutineCard && pendingRoutine ? (
-            <RoutineChatCard
-              routine={pendingRoutine}
-              onSave={handleSave}
-              onRegenerate={() => void handleRegenerate()}
-              onDiscard={resetSession}
-              saving={saving}
-            />
+            <Animated.View
+              entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(300).springify()}
+            >
+              <RoutineChatCard
+                routine={pendingRoutine}
+                onSave={handleSave}
+                onRegenerate={() => void handleRegenerate()}
+                onDiscard={resetSession}
+                saving={saving}
+              />
+            </Animated.View>
           ) : null}
         </ScrollView>
 

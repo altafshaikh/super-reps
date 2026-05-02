@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, StyleSheet,
-  Dimensions, Share, Linking,
+  Dimensions, Share, Linking, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -9,8 +9,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withDelay, withTiming,
+  FadeInDown, FadeIn,
 } from 'react-native-reanimated';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { COLORS } from '@/constants';
+import { useReduceMotion } from '@/context/MotionContext';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { formatDurationClock, formatVolumeDisplay, formatWeight } from '@/lib/utils';
 import { getVolumeComparison } from '@/lib/weight-comparisons';
 import { HumanBodySVG } from '@/components/ui';
@@ -353,6 +357,8 @@ export default function WorkoutCompleteScreen() {
 
   const insight = useRef(INSIGHTS[Math.floor(Math.random() * INSIGHTS.length)]).current;
   const [shareVisible, setShareVisible] = useState(false);
+  const reduceMotion = useReduceMotion();
+  const confettiRef = useRef<any>(null);
 
   const trophyScale = useSharedValue(0);
   const trophyRotate = useSharedValue(-0.3);
@@ -362,6 +368,9 @@ export default function WorkoutCompleteScreen() {
     trophyScale.value = withSpring(1, { damping: 8, stiffness: 180 });
     trophyRotate.value = withSpring(0, { damping: 10, stiffness: 150 });
     contentOpacity.value = withDelay(200, withTiming(1, { duration: 300 }));
+    if (prs.length > 0 && !reduceMotion && Platform.OS !== 'web') {
+      setTimeout(() => confettiRef.current?.start(), 500);
+    }
   }, []);
 
   const trophyStyle = useAnimatedStyle(() => ({
@@ -377,6 +386,16 @@ export default function WorkoutCompleteScreen() {
 
   return (
     <View style={[s.root, { paddingBottom: insets.bottom + 16 }]}>
+      {prs.length > 0 && Platform.OS !== 'web' && (
+        <ConfettiCannon
+          ref={confettiRef}
+          count={80}
+          origin={{ x: SCREEN_W / 2, y: -10 }}
+          colors={[COLORS.blue, COLORS.green, '#FFFFFF', COLORS.amber]}
+          fadeOut
+          autoStart={false}
+        />
+      )}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[s.scroll, { paddingTop: insets.top + 32 }]}
@@ -411,15 +430,20 @@ export default function WorkoutCompleteScreen() {
             <View style={s.section}>
               <Text style={s.sectionLabel}>{prs.length} NEW PR{prs.length > 1 ? 'S' : ''} 🎉</Text>
               {prs.map((pr, i) => (
-                <View key={i} style={[s.prRow, i < prs.length - 1 && s.prRowBorder]}>
-                  <Text style={s.prName} numberOfLines={1}>{pr.exerciseName}</Text>
-                  <View style={s.prRight}>
-                    <Text style={s.prWeight}>{formatWeight(pr.weightKg)} kg</Text>
-                    <View style={s.prBadge}>
-                      <Text style={s.prBadgeText}>+{formatWeight(pr.improvementKg)} kg</Text>
+                <Animated.View
+                  key={i}
+                  entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.delay(i * 80).springify()}
+                >
+                  <View style={[s.prRow, i < prs.length - 1 && s.prRowBorder]}>
+                    <Text style={s.prName} numberOfLines={1}>{pr.exerciseName}</Text>
+                    <View style={s.prRight}>
+                      <Text style={s.prWeight}>{formatWeight(pr.weightKg)} kg</Text>
+                      <View style={s.prBadge}>
+                        <Text style={s.prBadgeText}>+{formatWeight(pr.improvementKg)} kg</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
+                </Animated.View>
               ))}
             </View>
           )}
@@ -435,17 +459,17 @@ export default function WorkoutCompleteScreen() {
       </ScrollView>
 
       <Animated.View style={[s.actions, contentStyle]}>
-        <TouchableOpacity style={s.shareBtn} onPress={() => setShareVisible(true)} activeOpacity={0.8}>
-          <Ionicons name="share-outline" size={18} color={COLORS.ink} style={{ marginRight: 6 }} />
-          <Text style={s.shareBtnTxt}>Share Workout</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={s.doneBtn}
-          onPress={() => router.replace('/(tabs)')}
-          activeOpacity={0.85}
-        >
-          <Text style={s.doneBtnTxt}>Back to Home</Text>
-        </TouchableOpacity>
+        <PressableScale onPress={() => setShareVisible(true)} haptic={false}>
+          <View style={s.shareBtn}>
+            <Ionicons name="share-outline" size={18} color={COLORS.ink} style={{ marginRight: 6 }} />
+            <Text style={s.shareBtnTxt}>Share Workout</Text>
+          </View>
+        </PressableScale>
+        <PressableScale onPress={() => router.replace('/(tabs)')}>
+          <View style={s.doneBtn}>
+            <Text style={s.doneBtnTxt}>Back to Home</Text>
+          </View>
+        </PressableScale>
       </Animated.View>
 
       <ShareSheet
