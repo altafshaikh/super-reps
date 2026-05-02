@@ -1,7 +1,10 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { House, Barbell, Robot, User } from 'phosphor-react-native';
+import { House } from 'phosphor-react-native/src/icons/House';
+import { Barbell } from 'phosphor-react-native/src/icons/Barbell';
+import { Robot } from 'phosphor-react-native/src/icons/Robot';
+import { User } from 'phosphor-react-native/src/icons/User';
 import { COLORS } from '@/constants';
 import { useReduceMotion } from '@/context/MotionContext';
 
