@@ -981,7 +981,8 @@ function ExercisesTab() {
       <FlatList
         data={filtered}
         keyExtractor={e => e.id}
-        contentContainerStyle={et.list}
+        style={et.list}
+        contentContainerStyle={et.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={et.center}>
@@ -1037,35 +1038,36 @@ function ExerciseRow({ item, onPress }: { item: CatalogExercise; onPress: () => 
 
 const et = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  center: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyTxt: { color: COLORS.ink3, fontSize: 14 },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16, marginTop: 12, marginBottom: 8,
     backgroundColor: COLORS.surface2, borderRadius: 12,
     borderWidth: 0.5, borderColor: COLORS.border,
-    paddingHorizontal: 12, paddingVertical: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
   },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, color: COLORS.ink, fontSize: 14 },
-  chipScroll: { maxHeight: 44 },
-  chipRow: { paddingHorizontal: 16, gap: 8, flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
+  chipScroll: { flexShrink: 0 },
+  chipRow: { paddingHorizontal: 16, gap: 8, flexDirection: 'row', alignItems: 'center', paddingBottom: 10, paddingTop: 2 },
   chip: {
-    paddingHorizontal: 14, paddingVertical: 6,
+    paddingHorizontal: 14, paddingVertical: 7,
     backgroundColor: COLORS.surface2, borderRadius: 99,
-    borderWidth: 0.5, borderColor: COLORS.border,
+    borderWidth: 0.5, borderColor: COLORS.borderMid,
   },
   chipActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
-  chipTxt: { fontSize: 12, fontWeight: '600', color: COLORS.ink2, textTransform: 'capitalize' },
+  chipTxt: { fontSize: 13, fontWeight: '600', color: COLORS.ink2, textTransform: 'capitalize' },
   chipTxtActive: { color: COLORS.bg },
-  list: { paddingHorizontal: 16, paddingBottom: 40 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
   row: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, gap: 12,
-    borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
+    paddingVertical: 10, gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border,
   },
   thumb: {
-    width: 52, height: 52, borderRadius: 10,
+    width: 48, height: 48, borderRadius: 10,
     backgroundColor: COLORS.surface2, overflow: 'hidden',
   },
   thumbSkeleton: {
@@ -1073,7 +1075,7 @@ const et = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.surface2,
   },
-  thumbImg: { width: 52, height: 52 },
+  thumbImg: { width: 48, height: 48 },
   thumbFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   rowInfo: { flex: 1 },
   rowName: { color: COLORS.ink, fontWeight: '600', fontSize: 15 },
