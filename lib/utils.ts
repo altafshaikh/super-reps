@@ -25,7 +25,11 @@ export function formatVolumeDisplay(kg: number): string {
   return `${Math.round(kg * 10) / 10} kg`;
 }
 
-export function formatWeight(kg: number): string {
+export function formatWeight(kg: number, units?: 'kg' | 'lbs' | null): string {
+  if (units === 'lbs') {
+    const lbs = kg * 2.20462;
+    return lbs % 1 < 0.05 ? `${Math.round(lbs)}` : lbs.toFixed(1);
+  }
   return kg % 1 === 0 ? `${kg}` : kg.toFixed(1);
 }
 

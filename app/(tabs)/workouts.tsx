@@ -1,12 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  StatusBar,
-  ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,37 +14,27 @@ import { COLORS } from '@/constants';
 import { ExerciseLibraryModal } from '@/components/workouts/ExerciseLibraryModal';
 
 const MG_LABEL: Record<string, string> = {
-  chest: 'Chest',
-  back: 'Back',
-  shoulders: 'Shoulders',
-  biceps: 'Biceps',
-  triceps: 'Triceps',
-  forearms: 'Forearms',
-  quads: 'Quads',
-  hamstrings: 'Hamstrings',
-  glutes: 'Glutes',
-  calves: 'Calves',
-  core: 'Core',
-  full_body: 'Full body',
+  chest: 'Chest', back: 'Back', shoulders: 'Shoulders',
+  biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms',
+  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes',
+  calves: 'Calves', core: 'Core', full_body: 'Full body',
 };
 
 function formatMuscle(m: string): string {
-  return MG_LABEL[m] ?? m.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return MG_LABEL[m] ?? m.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function estimateRoutineMinutes(routine: Routine): number {
   let sec = 0;
   for (const day of routine.days ?? []) {
     for (const re of day.exercises ?? []) {
-      const sets = Math.max(1, re.sets ?? 3);
-      const rest = re.rest_seconds ?? 90;
-      sec += sets * (40 + rest) + 90;
+      sec += Math.max(1, re.sets ?? 3) * (40 + (re.rest_seconds ?? 90)) + 90;
     }
   }
   return Math.max(20, Math.round(sec / 60));
 }
 
-function routineSubtitle(routine: Routine): string {
+function routineMuscles(routine: Routine): string[] {
   const muscles = new Set<string>();
   for (const day of routine.days ?? []) {
     for (const re of day.exercises ?? []) {
@@ -59,17 +43,15 @@ function routineSubtitle(routine: Routine): string {
       }
     }
   }
-  const line = [...muscles].slice(0, 4).join(' · ');
-  const min = estimateRoutineMinutes(routine);
-  return line ? `${line} · ~${min} min` : `~${min} min`;
+  return [...muscles].slice(0, 4);
 }
 
 function totalExerciseCount(routine: Routine): number {
-  let n = 0;
-  for (const day of routine.days ?? []) {
-    n += day.exercises?.length ?? 0;
-  }
-  return n;
+  return (routine.days ?? []).reduce((n, d) => n + (d.exercises?.length ?? 0), 0);
+}
+
+function firstWorkoutDay(routine: Routine) {
+  return routine.days?.find(d => (d.exercises?.length ?? 0) > 0);
 }
 
 export default function WorkoutsScreen() {
@@ -82,11 +64,7 @@ export default function WorkoutsScreen() {
   const [libraryOpen, setLibraryOpen] = useState(false);
 
   const loadRoutines = useCallback(() => {
-    if (!user) {
-      setRoutines([]);
-      setRoutinesLoading(false);
-      return;
-    }
+    if (!user) { setRoutines([]); setRoutinesLoading(false); return; }
     let cancelled = false;
     setRoutinesLoading(true);
     (async () => {
@@ -106,9 +84,7 @@ export default function WorkoutsScreen() {
         if (!cancelled) setRoutinesLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [user]);
 
   useFocusEffect(loadRoutines);
@@ -118,12 +94,20 @@ export default function WorkoutsScreen() {
     router.push('/workout/active');
   };
 
+  const handleStartRoutine = (routine: Routine) => {
+    const day = firstWorkoutDay(routine);
+    const exercises: Exercise[] = day?.exercises?.map(re => re.exercise as Exercise).filter(Boolean) ?? [];
+    startWorkout(routine.id, routine.name, exercises);
+    router.push('/workout/active');
+  };
+
   const handleAddFromLibrary = (exercise: Exercise) => {
     startWorkout(undefined, 'Quick workout', [exercise]);
     setLibraryOpen(false);
     router.push('/workout/active');
   };
 
+  // Active workout banner
   if (isActive) {
     return (
       <View style={s.root}>
@@ -139,6 +123,14 @@ export default function WorkoutsScreen() {
     );
   }
 
+  if (routinesLoading) {
+    return (
+      <View style={[s.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.blue} />
+      </View>
+    );
+  }
+
   const hasRoutines = routines.length > 0;
 
   return (
@@ -146,105 +138,88 @@ export default function WorkoutsScreen() {
       <StatusBar barStyle="light-content" />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          s.scrollContent,
-          !routinesLoading && !hasRoutines && { flexGrow: 1 },
-        ]}
+        contentContainerStyle={s.scroll}
       >
         <View style={[s.header, { paddingTop: insets.top + 16 }]}>
           <Text style={s.pageTitle}>Workouts</Text>
-          <Text style={s.subtitle}>Routines, quick start, and exercise library</Text>
         </View>
 
-        {routinesLoading ? (
-          <View style={s.loadingBox}>
-            <ActivityIndicator size="large" color={COLORS.blue} />
-          </View>
-        ) : (
+        {hasRoutines ? (
           <>
-            <View style={s.actionRow}>
-              <TouchableOpacity
-                style={s.cardEmptyWorkout}
-                onPress={handleStartEmpty}
-                activeOpacity={0.9}
-              >
-                <Text style={s.cardEmptyWorkoutTxt}>+ Empty Workout</Text>
+            {/* Compact utility icon row */}
+            <View style={s.utilRow}>
+              <TouchableOpacity style={s.utilBtn} onPress={handleStartEmpty} activeOpacity={0.8}>
+                <Ionicons name="add-circle-outline" size={22} color={COLORS.ink2} />
+                <Text style={s.utilLabel}>Empty</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={s.cardBuildAi}
-                onPress={() => router.push('/routines/ai-builder')}
-                activeOpacity={0.9}
-              >
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={18}
-                  color={COLORS.ink}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={s.cardBuildAiTxt} numberOfLines={1}>
-                  Build with AI
-                </Text>
+              <TouchableOpacity style={s.utilBtn} onPress={() => router.navigate('/(tabs)/ai')} activeOpacity={0.8}>
+                <Ionicons name="chatbubble-ellipses-outline" size={22} color={COLORS.ink2} />
+                <Text style={s.utilLabel}>AI Build</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.utilBtn} onPress={() => router.push('/routines/import-hevy-link')} activeOpacity={0.8}>
+                <Ionicons name="download-outline" size={22} color={COLORS.ink2} />
+                <Text style={s.utilLabel}>Import</Text>
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={s.cardImport}
-              onPress={() => router.push('/routines/import-hevy-link')}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="download-outline" size={20} color={COLORS.ink} style={{ marginRight: 10 }} />
-              <Text style={s.cardImportTxt}>Import Routine</Text>
+            {/* Routine list */}
+            <View style={s.routineList}>
+              {routines.map(routine => {
+                const exCount = totalExerciseCount(routine);
+                const muscles = routineMuscles(routine);
+                const mins = estimateRoutineMinutes(routine);
+                return (
+                  <View key={routine.id} style={s.routineCard}>
+                    <TouchableOpacity
+                      style={s.routineCardBody}
+                      onPress={() => router.push(`/routines/${routine.id}`)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={s.routineName}>{routine.name}</Text>
+                      {muscles.length > 0 && (
+                        <Text style={s.routineMuscles} numberOfLines={1}>
+                          {muscles.join(' · ')}
+                        </Text>
+                      )}
+                      <Text style={s.routineMeta}>{exCount} exercises · ~{mins} min</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.startBtn}
+                      onPress={() => handleStartRoutine(routine)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={s.startBtnTxt}>Start</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          <>
+            {/* Guidance cards for new users */}
+            <TouchableOpacity style={[s.guidanceCard, s.guidanceCardPrimary]} onPress={handleStartEmpty} activeOpacity={0.85}>
+              <Ionicons name="flash-outline" size={32} color={COLORS.bg} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.guidancePrimaryTitle}>Quick Start</Text>
+                <Text style={s.guidancePrimarySub}>Start an empty workout now, add exercises as you go</Text>
+              </View>
             </TouchableOpacity>
 
-            {hasRoutines ? (
-              <>
-                <View style={s.sectionHead}>
-                  <Text style={s.sectionKicker}>MY ROUTINES</Text>
-                  <TouchableOpacity onPress={() => router.push('/routines/ai-builder')} hitSlop={12}>
-                    <Text style={s.sectionNew}>+ New</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={s.routineCardsWrap}>
-                  {routines.map((routine) => {
-                    const exN = totalExerciseCount(routine);
-                    const sub = routineSubtitle(routine);
-                    return (
-                      <TouchableOpacity
-                        key={routine.id}
-                        style={s.routineCard}
-                        onPress={() => router.push(`/routines/${routine.id}`)}
-                        activeOpacity={0.75}
-                      >
-                        <View style={s.routineCardBody}>
-                          <Text style={s.routineName}>{routine.name}</Text>
-                          <Text style={s.routineSub} numberOfLines={2}>
-                            {sub}
-                          </Text>
-                        </View>
-                        <View style={s.routineMeta}>
-                          <Text style={s.routineEx}>{exN} ex</Text>
-                          <Ionicons name="chevron-forward" size={18} color={COLORS.ink3} />
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            ) : (
-              <View style={s.emptyHint}>
-                <Text style={s.emptyHintTitle}>No routines yet</Text>
-                <Text style={s.emptyHintBody}>
-                  Use Import Routine or Build with AI — saved plans show up here as cards.
-                </Text>
+            <TouchableOpacity style={s.guidanceCard} onPress={() => router.navigate('/(tabs)/ai')} activeOpacity={0.85}>
+              <Ionicons name="chatbubble-ellipses-outline" size={32} color={COLORS.blue} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.guidanceTitle}>Build with AI</Text>
+                <Text style={s.guidanceSub}>Tell me your goal — I'll design a personalised programme</Text>
               </View>
-            )}
+            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={s.dashedBrowse}
-              onPress={() => setLibraryOpen(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={s.dashedBrowseTxt}>Browse exercise library</Text>
+            <TouchableOpacity style={s.guidanceCard} onPress={() => router.push('/routines/import-hevy-link')} activeOpacity={0.85}>
+              <Ionicons name="download-outline" size={32} color={COLORS.ink2} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.guidanceTitle}>Import Routine</Text>
+                <Text style={s.guidanceSub}>Bring in an existing programme from a CSV or link</Text>
+              </View>
             </TouchableOpacity>
           </>
         )}
@@ -261,140 +236,80 @@ export default function WorkoutsScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  scrollContent: { paddingBottom: 110, paddingHorizontal: 16 },
-  header: { paddingBottom: 20 },
+  scroll: { paddingHorizontal: 16, paddingBottom: 110 },
+  header: { paddingBottom: 16 },
   pageTitle: { fontSize: 30, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: COLORS.ink3, marginTop: 6, lineHeight: 20 },
-  loadingBox: {
-    minHeight: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  actionRow: {
+
+  // Compact utility row
+  utilRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 20,
   },
-  cardEmptyWorkout: {
+  utilBtn: {
     flex: 1,
-    minHeight: 52,
-    backgroundColor: COLORS.ink,
-    borderRadius: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-  },
-  cardEmptyWorkoutTxt: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.bg,
-    textAlign: 'center',
-  },
-  cardBuildAi: {
-    flex: 1,
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.borderMid,
-    backgroundColor: COLORS.surface2,
+    gap: 5,
     paddingVertical: 14,
-    paddingHorizontal: 8,
-  },
-  cardBuildAiTxt: { fontSize: 14, fontWeight: '700', color: COLORS.ink, flexShrink: 1 },
-  cardImport: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surface2,
+    backgroundColor: COLORS.surface,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: COLORS.border,
-    paddingVertical: 16,
-    marginBottom: 22,
   },
-  cardImportTxt: { fontSize: 16, fontWeight: '700', color: COLORS.ink },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  sectionKicker: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.ink3,
-    letterSpacing: 1.2,
-  },
-  sectionNew: { fontSize: 14, fontWeight: '700', color: COLORS.ink3 },
-  routineCardsWrap: { gap: 12, marginBottom: 20 },
+  utilLabel: { fontSize: 11, fontWeight: '700', color: COLORS.ink3 },
+
+  // Routine list
+  routineList: { gap: 12 },
   routineCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: COLORS.border,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    overflow: 'hidden',
   },
-  routineCardBody: { flex: 1, paddingRight: 12, minWidth: 0 },
-  routineName: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
-  routineSub: { fontSize: 13, color: COLORS.ink3, marginTop: 5, lineHeight: 18 },
-  routineMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  routineEx: { fontSize: 14, fontWeight: '700', color: COLORS.ink3 },
-  emptyHint: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingVertical: 22,
+  routineCardBody: { flex: 1, padding: 16 },
+  routineName: { fontSize: 17, fontWeight: '800', color: COLORS.ink, marginBottom: 4 },
+  routineMuscles: { fontSize: 13, color: COLORS.blue, marginBottom: 3, fontWeight: '500' },
+  routineMeta: { fontSize: 12, color: COLORS.ink3 },
+  startBtn: {
+    backgroundColor: COLORS.ink,
+    paddingVertical: 14,
     paddingHorizontal: 18,
-    marginBottom: 20,
-  },
-  emptyHintTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.ink,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  emptyHintBody: {
-    fontSize: 14,
-    color: COLORS.ink3,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  dashedBrowse: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: COLORS.borderMid,
-    borderRadius: 16,
-    paddingVertical: 18,
+    margin: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
-  dashedBrowseTxt: { fontSize: 16, fontWeight: '700', color: COLORS.ink },
-  activeWrap: {
-    flex: 1,
+  startBtnTxt: { color: COLORS.bg, fontWeight: '800', fontSize: 14 },
+
+  // Guidance cards
+  guidanceCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
+    gap: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    padding: 20,
+    marginBottom: 12,
   },
+  guidanceCardPrimary: {
+    backgroundColor: COLORS.ink,
+    borderColor: COLORS.ink,
+  },
+  guidancePrimaryTitle: { fontSize: 18, fontWeight: '900', color: COLORS.bg, marginBottom: 3 },
+  guidancePrimarySub: { fontSize: 13, color: `${COLORS.bg}AA`, lineHeight: 18 },
+  guidanceTitle: { fontSize: 18, fontWeight: '900', color: COLORS.ink, marginBottom: 3 },
+  guidanceSub: { fontSize: 13, color: COLORS.ink3, lineHeight: 18 },
+
+  // Active banner
+  activeWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   activeEmoji: { fontSize: 40, marginBottom: 16 },
   activeTitle: { fontSize: 22, fontWeight: '800', color: COLORS.ink, textAlign: 'center', marginBottom: 6 },
   activeSub: { fontSize: 14, color: COLORS.ink3, textAlign: 'center', marginBottom: 28 },
-  primaryBtn: {
-    backgroundColor: COLORS.ink,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-  },
+  primaryBtn: { backgroundColor: COLORS.ink, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
   primaryBtnText: { color: COLORS.bg, fontWeight: '800', fontSize: 15 },
 });

@@ -17,6 +17,11 @@ export interface User {
   level: Level | null;
   equipment: string[];
   created_at: string;
+  bio: string | null;
+  gender: string | null;
+  dob: string | null;
+  units: 'kg' | 'lbs' | null;
+  rest_timer_default: number | null;
 }
 
 export interface Exercise {
@@ -28,6 +33,8 @@ export interface Exercise {
   equipment: string[];
   instructions: string;
   is_custom: boolean;
+  image_url: string | null;
+  form_cues: string[] | null;
 }
 
 export interface RoutineExercise {

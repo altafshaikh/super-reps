@@ -34,14 +34,41 @@ const AIRoutineSchema = z.object({
   deload_week: z.number().int().min(4).max(12),
 });
 
+export type RoutineUserContext = {
+  goal?: string;
+  level?: string;
+  equipment?: string[];
+  recentSessions?: { date: string; routineName: string; volumeKg: number }[];
+  topMuscles?: { muscle: string; count: number }[];
+  topPRs?: { exerciseName: string; weightKg: number }[];
+};
+
 export async function generateRoutine(
   userPrompt: string,
   exercises: Exercise[],
   onChunk?: (text: string) => void,
+  userContext?: RoutineUserContext,
 ): Promise<AIRoutineJSON> {
   const exerciseList = exercises
     .map(e => `${e.slug}|${e.name}|${e.category}|${e.equipment.join(',')}`)
     .join('\n');
+
+  const contextLines: string[] = [];
+  if (userContext?.goal) contextLines.push(`Goal: ${userContext.goal}`);
+  if (userContext?.level) contextLines.push(`Training level: ${userContext.level}`);
+  if (userContext?.equipment?.length) contextLines.push(`Equipment: ${userContext.equipment.join(', ')}`);
+  if (userContext?.recentSessions?.length) {
+    contextLines.push('Recent sessions (last 7):');
+    userContext.recentSessions.slice(0, 7).forEach(s =>
+      contextLines.push(`  ${s.date}: ${s.routineName} — ${s.volumeKg}kg`));
+  }
+  if (userContext?.topMuscles?.length) {
+    contextLines.push(`Top trained muscles: ${userContext.topMuscles.slice(0, 5).map(m => m.muscle).join(', ')}`);
+  }
+  if (userContext?.topPRs?.length) {
+    contextLines.push(`Top PRs: ${userContext.topPRs.slice(0, 5).map(p => `${p.exerciseName} ${p.weightKg}kg`).join(', ')}`);
+  }
+  const contextBlock = contextLines.length > 0 ? `\nUser profile:\n${contextLines.join('\n')}\n` : '';
 
   const messages: Groq.Chat.ChatCompletionMessageParam[] = [
     {
@@ -69,7 +96,7 @@ JSON schema:
     },
     {
       role: 'user',
-      content: `Exercise library (slug|name|category|equipment):\n${exerciseList}\n\nGenerate a workout programme for: ${userPrompt}`,
+      content: `Exercise library (slug|name|category|equipment):\n${exerciseList}\n${contextBlock}\nGenerate a workout programme for: ${userPrompt}`,
     },
   ];
 

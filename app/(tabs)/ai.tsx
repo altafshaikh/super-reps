@@ -18,8 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
-import { QUICK_PROMPTS, COLORS } from '@/constants';
+import { COLORS } from '@/constants';
 import type { AIRoutineJSON, Exercise } from '@/types';
+import type { RoutineUserContext } from '@/lib/ai';
 
 const SCREEN_BG = '#0a0c14';
 const AI_CARD = '#141824';
@@ -30,16 +31,10 @@ const INTRO_AI =
   "I'll build a personalised programme from your exercise library. Tell me your goal, days available, and any constraints — then tap send.";
 
 const AI_CHIPS: { label: string; prompt: string }[] = [
-  { label: 'PPL 6-Day', prompt: QUICK_PROMPTS[0] },
-  { label: 'Upper/Lower 4d', prompt: QUICK_PROMPTS[1] },
-  { label: 'Full Body 3x', prompt: QUICK_PROMPTS[2] },
-  { label: 'Bro Split 5d', prompt: QUICK_PROMPTS[3] },
-  { label: 'Home', prompt: QUICK_PROMPTS[4] },
-  {
-    label: '5/3/1 Wendler',
-    prompt:
-      'Jim Wendler 5/3/1 style programme — squat, bench, deadlift, overhead press as main lifts, 4 training days per week, monthly progression and deload weeks.',
-  },
+  { label: 'Build me a 4-day push/pull split', prompt: 'Build me a 4-day push/pull split programme with barbell and dumbbell exercises.' },
+  { label: 'I only have 3 days, what do you recommend?', prompt: 'I can only train 3 days a week. What programme do you recommend for overall strength and muscle?' },
+  { label: 'Analyse my training and suggest improvements', prompt: 'Based on my recent training history and PRs, analyse my programme and suggest improvements.' },
+  { label: 'I want to focus more on legs', prompt: 'I want to focus more on leg development. Build me a programme that prioritises quads, hamstrings and glutes.' },
 ];
 
 function dayBadgeLabel(day: { name: string }): string {
@@ -55,7 +50,7 @@ export default function AITab() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const { user } = useUserStore();
-  const { builderState, pendingRoutine, errorMessage, generate, clearBuilder } = useAIStore();
+  const { builderState, streamingText, pendingRoutine, errorMessage, generate, clearBuilder } = useAIStore();
   const [prompt, setPrompt] = useState('');
   const [saving, setSaving] = useState(false);
   const [displayedUserPrompt, setDisplayedUserPrompt] = useState<string | null>(null);
@@ -82,8 +77,57 @@ export default function AITab() {
     lastGenerationPrompt.current = t;
     setDisplayedUserPrompt(t);
     setPrompt('');
-    const { data: exercises } = await supabase.from('exercises').select('*').limit(150);
-    await generate(t, (exercises ?? []) as Exercise[]);
+
+    const [exercisesRes, sessionsRes, setsRes] = await Promise.all([
+      supabase.from('exercises').select('*').limit(150),
+      user ? supabase
+        .from('workout_sessions')
+        .select('started_at, routine_name, volume_total')
+        .eq('user_id', user.id)
+        .not('finished_at', 'is', null)
+        .order('started_at', { ascending: false })
+        .limit(7) : Promise.resolve({ data: null }),
+      user ? supabase
+        .from('workout_sets')
+        .select('exercise_id, weight_kg, exercises(name, muscle_groups)')
+        .eq('user_id', user.id)
+        .limit(500) : Promise.resolve({ data: null }),
+    ]);
+
+    const userContext: RoutineUserContext = {};
+
+    if (sessionsRes.data?.length) {
+      userContext.recentSessions = sessionsRes.data.map(s => ({
+        date: s.started_at.slice(0, 10),
+        routineName: s.routine_name ?? 'Workout',
+        volumeKg: Number(s.volume_total ?? 0),
+      }));
+    }
+
+    if (setsRes.data?.length) {
+      // Top muscles by set count
+      const muscleCounts: Record<string, number> = {};
+      const exerciseMaxes: Record<string, { name: string; max: number }> = {};
+      for (const row of setsRes.data as any[]) {
+        const muscles: string[] = row.exercises?.muscle_groups ?? [];
+        for (const m of muscles) muscleCounts[m] = (muscleCounts[m] ?? 0) + 1;
+        const exId = row.exercise_id;
+        const w = Number(row.weight_kg);
+        if (!exerciseMaxes[exId] || w > exerciseMaxes[exId].max) {
+          exerciseMaxes[exId] = { name: row.exercises?.name ?? exId, max: w };
+        }
+      }
+      userContext.topMuscles = Object.entries(muscleCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([muscle, count]) => ({ muscle, count }));
+      userContext.topPRs = Object.values(exerciseMaxes)
+        .sort((a, b) => b.max - a.max)
+        .slice(0, 5)
+        .map(p => ({ exerciseName: p.name, weightKg: p.max }));
+    }
+
+    await generate(t, (exercisesRes.data ?? []) as Exercise[], userContext);
   };
 
   const handleSend = () => {
@@ -214,9 +258,15 @@ export default function AITab() {
 
           {builderState === 'loading' ? (
             <View style={s.aiBubbleWrap}>
-              <View style={[s.aiBubble, s.typingBubble]}>
-                <ActivityIndicator color={COLORS.ink2} size="small" />
-                <Text style={s.typingText}>Building your programme…</Text>
+              <View style={s.aiBubble}>
+                {streamingText ? (
+                  <Text style={s.aiBubbleText}>{streamingText}</Text>
+                ) : (
+                  <View style={s.typingBubble}>
+                    <ActivityIndicator color={COLORS.ink2} size="small" />
+                    <Text style={s.typingText}>Building your programme…</Text>
+                  </View>
+                )}
               </View>
             </View>
           ) : null}

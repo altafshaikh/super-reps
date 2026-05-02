@@ -7,8 +7,12 @@ interface UserStore {
   loading: boolean;
   /** Set when session exists but `public.users` has no row — show on login, then clear. */
   signInBlockedMessage: string | null;
+  aiReview: string | null;
+  aiReviewGeneratedAt: number | null;
   setUser: (user: User | null) => void;
   clearSignInBlockedMessage: () => void;
+  setAIReview: (text: string) => void;
+  clearAIReview: () => void;
   fetchProfile: (userId: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<{ error: { message: string; code?: string; details?: string } | null }>;
   signOut: () => Promise<void>;
@@ -21,10 +25,13 @@ export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   loading: false,
   signInBlockedMessage: null,
+  aiReview: null,
+  aiReviewGeneratedAt: null,
 
   setUser: (user) => set({ user }),
-
   clearSignInBlockedMessage: () => set({ signInBlockedMessage: null }),
+  setAIReview: (text) => set({ aiReview: text, aiReviewGeneratedAt: Date.now() }),
+  clearAIReview: () => set({ aiReview: null, aiReviewGeneratedAt: null }),
 
   fetchProfile: async (userId) => {
     set({ loading: true });

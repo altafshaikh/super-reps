@@ -29,3 +29,35 @@ BEGIN
       USING (bucket_id = 'exercise-images');
   END IF;
 END $$;
+
+-- Body weight logs table
+CREATE TABLE IF NOT EXISTS body_weight_logs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  weight_kg   DECIMAL(6,2) NOT NULL,
+  logged_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE body_weight_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'body_weight_logs' AND policyname = 'Users manage own weight logs'
+  ) THEN
+    CREATE POLICY "Users manage own weight logs"
+      ON body_weight_logs
+      FOR ALL
+      USING (user_id = auth.uid())
+      WITH CHECK (user_id = auth.uid());
+  END IF;
+END $$;
+
+-- Users table: profile enrichment columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS bio                TEXT,
+  ADD COLUMN IF NOT EXISTS gender             TEXT,
+  ADD COLUMN IF NOT EXISTS dob                DATE,
+  ADD COLUMN IF NOT EXISTS units              TEXT DEFAULT 'kg',
+  ADD COLUMN IF NOT EXISTS rest_timer_default INT  DEFAULT 90;

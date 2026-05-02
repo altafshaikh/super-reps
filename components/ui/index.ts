@@ -9,3 +9,5 @@ export { SRToggle } from './SRToggle';
 export { SRBottomSheet } from './SRBottomSheet';
 export { ExerciseCatalog } from './ExerciseCatalog';
 export { SRTabBar } from './SRTabBar';
+export { ExerciseDetailSheet } from './ExerciseDetailSheet';
+export { HumanBodySVG } from './HumanBodySVG';

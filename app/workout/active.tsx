@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, FlatList, Modal, ActivityIndicator, Platform, StyleSheet,
@@ -12,139 +13,19 @@ import { useWorkoutStore } from '@/stores/workoutStore';
 import { useUserStore } from '@/stores/userStore';
 import { supabase } from '@/lib/supabase';
 import { getCoachAdvice } from '@/lib/ai';
+import { detectTrigger, generateTriggerMessage } from '@/lib/workout-coaching';
 import { formatDuration, formatWeight } from '@/lib/utils';
-import { fetchHistoricalMaxWeightByExercise, findBestSessionPR } from '@/lib/workout-pr';
+import { fetchHistoricalMaxWeightByExercise, findAllSessionPRs } from '@/lib/workout-pr';
+import { resolveSetPrefill } from '@/lib/set-prefill';
+import type { SetHistory } from '@/lib/set-prefill';
 import { COLORS, REST_TIMES } from '@/constants';
+import { ExerciseDetailSheet } from '@/components/ui';
 import type { Exercise, ActiveSet } from '@/types';
 
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
-const RPE_NOTES: Record<number, string> = {
-  6: 'Very easy — 4+ reps left',
-  7: 'Easy — 3 reps in reserve',
-  7.5: 'Moderate — ~2–3 reps left',
-  8: '2 reps in reserve — solid',
-  8.5: 'Hard — ~1–2 reps left',
-  9: '1 rep in reserve',
-  9.5: 'Almost max — 0–1 reps',
-  10: 'Maximum effort',
-};
 
 const REST_PRESETS = [60, 90, 120, 180];
 const REST_CIRCUM = 2 * Math.PI * 40;
-
-interface SetLogModalProps {
-  visible: boolean;
-  exerciseName: string;
-  setIndex: number;
-  weight: number;
-  reps: number;
-  rpe: number | null;
-  prevWeight: number | null;
-  prevReps: number | null;
-  onSave: (weight: number, reps: number, rpe: number | null) => void;
-  onClose: () => void;
-}
-
-function SetLogModal({
-  visible, exerciseName, setIndex, weight, reps, rpe,
-  prevWeight, prevReps, onSave, onClose,
-}: SetLogModalProps) {
-  const [w, setW] = useState(weight);
-  const [r, setR] = useState(reps);
-  const [selectedRpe, setSelectedRpe] = useState<number | null>(rpe);
-
-  useEffect(() => {
-    if (visible) {
-      setW(weight || (prevWeight ?? 0));
-      setR(reps || (prevReps ?? 0));
-      setSelectedRpe(rpe);
-    }
-  }, [visible]);
-
-  const adjustW = (delta: number) => setW(v => Math.max(0, Math.round((v + delta) * 4) / 4));
-  const adjustR = (delta: number) => setR(v => Math.max(0, v + delta));
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={m.overlay}>
-        <TouchableOpacity style={m.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={m.sheet}>
-          <View style={m.grab} />
-          <Text style={m.exName}>{exerciseName}</Text>
-          <Text style={m.setLabel}>Set {setIndex + 1}</Text>
-
-          {prevWeight != null && prevReps != null && (
-            <Text style={m.prevText}>Prev: {formatWeight(prevWeight)} kg × {prevReps} reps</Text>
-          )}
-
-          {/* Weight stepper */}
-          <Text style={m.fieldLabel}>Weight (kg)</Text>
-          <View style={m.stepper}>
-            <TouchableOpacity style={m.stepBtn} onPress={() => adjustW(-2.5)}>
-              <Text style={m.stepBtnTxt}>−</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={m.stepVal}
-              keyboardType="decimal-pad"
-              value={w > 0 ? formatWeight(w) : ''}
-              placeholder="0"
-              placeholderTextColor={COLORS.ink3}
-              onChangeText={v => setW(parseFloat(v) || 0)}
-            />
-            <TouchableOpacity style={m.stepBtn} onPress={() => adjustW(2.5)}>
-              <Text style={m.stepBtnTxt}>+</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Reps stepper */}
-          <Text style={m.fieldLabel}>Reps</Text>
-          <View style={m.stepper}>
-            <TouchableOpacity style={m.stepBtn} onPress={() => adjustR(-1)}>
-              <Text style={m.stepBtnTxt}>−</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={m.stepVal}
-              keyboardType="number-pad"
-              value={r > 0 ? String(r) : ''}
-              placeholder="0"
-              placeholderTextColor={COLORS.ink3}
-              onChangeText={v => setR(parseInt(v) || 0)}
-            />
-            <TouchableOpacity style={m.stepBtn} onPress={() => adjustR(1)}>
-              <Text style={m.stepBtnTxt}>+</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* RPE selector */}
-          <Text style={m.fieldLabel}>RPE (optional)</Text>
-          <View style={m.rpeRow}>
-            {RPE_OPTIONS.map(v => (
-              <TouchableOpacity
-                key={v}
-                style={[m.rpePill, selectedRpe === v && m.rpePillActive]}
-                onPress={() => setSelectedRpe(prev => prev === v ? null : v)}
-              >
-                <Text style={[m.rpePillTxt, selectedRpe === v && m.rpePillTxtActive]}>
-                  {v}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {selectedRpe != null && (
-            <Text style={m.rpeNote}>{RPE_NOTES[selectedRpe]}</Text>
-          )}
-
-          <TouchableOpacity
-            style={m.saveBtn}
-            onPress={() => onSave(w, r, selectedRpe)}
-          >
-            <Text style={m.saveBtnTxt}>Log Set {setIndex + 1} ✓</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
@@ -153,21 +34,19 @@ export default function ActiveWorkoutScreen() {
     routineName, startedAt, exercises, isActive,
     addSet, updateSet, completeSet, removeSet, addExercise,
     startRest, tickRest, skipRest, restRemaining, restActive, restSeconds,
-    coachText, setCoachText, finishWorkout, resetWorkout,
+    coachText, setCoachText, nextCoachMessage, finishWorkout, resetWorkout,
   } = useWorkoutStore();
   const { user } = useUserStore();
 
   const [elapsed, setElapsed] = useState(0);
+  const [restCoachMsg, setRestCoachMsg] = useState<string | null>(null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
   const [coachLoading, setCoachLoading] = useState<string | null>(null);
-  const [logModal, setLogModal] = useState<{
-    exerciseId: string;
-    exerciseName: string;
-    setId: string;
-    setIndex: number;
-  } | null>(null);
+  const [exerciseHistory, setExerciseHistory] = useState<Map<string, SetHistory>>(new Map());
+  const prefilledSets = useRef(new Set<string>());
 
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -182,28 +61,71 @@ export default function ActiveWorkoutScreen() {
   useEffect(() => {
     if (restActive) {
       restRef.current = setInterval(() => tickRest(), 1000);
+      setRestCoachMsg(nextCoachMessage());
     } else {
       if (restRef.current) clearInterval(restRef.current);
+      setRestCoachMsg(null);
     }
     return () => { if (restRef.current) clearInterval(restRef.current); };
   }, [restActive]);
+
+  // Fetch last-logged values for all exercises in the workout
+  useEffect(() => {
+    if (!user || exercises.length === 0) return;
+    const exerciseIds = exercises.map(e => e.exercise.id);
+    supabase
+      .from('workout_sets')
+      .select('exercise_id, weight_kg, reps, completed_at')
+      .in('exercise_id', exerciseIds)
+      .order('completed_at', { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (!data) return;
+        const hist = new Map<string, SetHistory>();
+        for (const row of data) {
+          if (!hist.has(row.exercise_id)) {
+            hist.set(row.exercise_id, { weight_kg: row.weight_kg, reps: row.reps });
+          }
+        }
+        setExerciseHistory(hist);
+      });
+  }, [user, exercises.length]);
+
+  // Pre-fill fresh sets with history (each set pre-filled exactly once)
+  useEffect(() => {
+    for (const ex of exercises) {
+      for (const set of ex.sets) {
+        if (set.completed || prefilledSets.current.has(set.id)) continue;
+        const prefill = resolveSetPrefill(ex.exercise.id, exerciseHistory);
+        if (prefill.weight_kg === 0 && prefill.reps === 8) continue; // no history yet
+        prefilledSets.current.add(set.id);
+        updateSet(ex.exercise.id, set.id, { weight_kg: prefill.weight_kg, reps: prefill.reps });
+      }
+    }
+  }, [exerciseHistory, exercises]);
 
   const handleCompleteSet = useCallback((exerciseId: string, setId: string) => {
     completeSet(exerciseId, setId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     startRest(restSeconds);
-  }, [completeSet, startRest, restSeconds]);
 
-  const openLogModal = (exerciseId: string, exerciseName: string, setId: string, setIndex: number) => {
-    setLogModal({ exerciseId, exerciseName, setId, setIndex });
-  };
-
-  const handleModalSave = (weight: number, reps: number, rpe: number | null) => {
-    if (!logModal) return;
-    updateSet(logModal.exerciseId, logModal.setId, { weight_kg: weight, reps, rpe });
-    handleCompleteSet(logModal.exerciseId, logModal.setId);
-    setLogModal(null);
-  };
+    // Trigger-based coaching
+    const exEntry = exercises.find(e => e.exercise.id === exerciseId);
+    const set = exEntry?.sets.find(s => s.id === setId);
+    if (exEntry && set) {
+      const totalSets = exercises.reduce((a, ex) => a + ex.sets.length, 0);
+      const completedSets = exercises.reduce((a, ex) => a + ex.sets.filter(s => s.completed).length, 0) + 1;
+      const hist = exerciseHistory.get(exerciseId);
+      const histArr = hist ? [{ exerciseId, lastWeightKg: hist.weight_kg }] : [];
+      const event = detectTrigger(exerciseId, set.set_index, set.weight_kg,
+        { exercises, totalSets, completedSets }, histArr);
+      if (event) {
+        generateTriggerMessage(event, { exercises, totalSets, completedSets }, histArr)
+          .then(msg => { if (msg) setCoachText(exerciseId, msg); })
+          .catch(() => {});
+      }
+    }
+  }, [completeSet, startRest, restSeconds, exercises, exerciseHistory, setCoachText]);
 
   const handleGetCoach = async (exerciseId: string, exerciseName: string) => {
     const ex = exercises.find(e => e.exercise.id === exerciseId);
@@ -285,7 +207,7 @@ export default function ActiveWorkoutScreen() {
     const duration = Math.floor((now.getTime() - sa.getTime()) / 1000);
     const exerciseIds = [...new Set(exs.map(e => e.exercise.id))];
     const historicalMax = await fetchHistoricalMaxWeightByExercise(user.id, exerciseIds);
-    const sessionPR = findBestSessionPR(exs, historicalMax);
+    const allPRs = findAllSessionPRs(exs, historicalMax);
     let volumeTotal = 0;
     const setsToInsert: any[] = [];
     for (const ex of exs) {
@@ -327,13 +249,10 @@ export default function ActiveWorkoutScreen() {
       pathname: '/workout/complete',
       params: {
         routineName: encodeURIComponent(routineTitle),
-        durationSec: String(duration), setCount: String(setsToInsert.length),
+        durationSec: String(duration),
+        setCount: String(setsToInsert.length),
         volumeKg: String(Math.round(volumeTotal)),
-        ...(sessionPR ? {
-          prExercise: encodeURIComponent(sessionPR.exerciseName),
-          prWeight: String(sessionPR.weightKg),
-          prDelta: String(sessionPR.improvementKg),
-        } : {}),
+        ...(allPRs.length > 0 ? { prsJson: encodeURIComponent(JSON.stringify(allPRs)) } : {}),
       },
     });
   };
@@ -355,14 +274,6 @@ export default function ActiveWorkoutScreen() {
 
   const restProgress = restSeconds > 0 ? restRemaining / restSeconds : 0;
   const restStrokeDash = REST_CIRCUM * (1 - restProgress);
-
-  const activeLogExercise = logModal
-    ? exercises.find(e => e.exercise.id === logModal.exerciseId)
-    : null;
-  const activeLogSet = activeLogExercise?.sets.find(s => s.id === logModal?.setId);
-  const prevCompletedSet = activeLogExercise
-    ? activeLogExercise.sets.filter(s => s.completed).at(-1)
-    : null;
 
   if (!isActive) {
     return (
@@ -438,6 +349,11 @@ export default function ActiveWorkoutScreen() {
               <Text style={[s.presetTxt, { color: COLORS.amber }]}>Skip</Text>
             </TouchableOpacity>
           </View>
+          {restCoachMsg && (
+            <Animated.View entering={FadeIn.duration(400)} style={s.coachCard}>
+              <Text style={s.coachCardText} numberOfLines={2}>{restCoachMsg}</Text>
+            </Animated.View>
+          )}
         </View>
       )}
 
@@ -446,10 +362,10 @@ export default function ActiveWorkoutScreen() {
           <View key={exercise.id} style={s.exerciseBlock}>
             {/* Exercise header */}
             <View style={s.exHeader}>
-              <View style={{ flex: 1 }}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => setSelectedExerciseId(exercise.id)} activeOpacity={0.7}>
                 <Text style={s.exName}>{exercise.name}</Text>
                 <Text style={s.exCategory}>{exercise.category}</Text>
-              </View>
+              </TouchableOpacity>
               <View style={s.exActions}>
                 {coachLoading === exercise.id ? (
                   <ActivityIndicator size="small" color={COLORS.primary} />
@@ -476,18 +392,19 @@ export default function ActiveWorkoutScreen() {
               </View>
             ) : null}
 
-            {/* Set rows */}
+            {/* Set rows — inline logging */}
             <View style={s.setsCard}>
               <View style={s.setsHeader}>
                 <Text style={[s.colHdr, { width: 32 }]}>Set</Text>
                 <Text style={[s.colHdr, { flex: 1, textAlign: 'center' }]}>kg</Text>
                 <Text style={[s.colHdr, { flex: 1, textAlign: 'center' }]}>Reps</Text>
+                <Text style={[s.colHdr, { width: 40, textAlign: 'center' }]}>RPE</Text>
                 <Text style={[s.colHdr, { width: 44, textAlign: 'center' }]}>Done</Text>
               </View>
               {sets.map((set, i) => {
-                const prevCompleted = sets.slice(0, i).filter(s => s.completed).at(-1);
+                const prevCompleted = sets.slice(0, i).filter(ss => ss.completed).at(-1);
                 return (
-                  <SetRow
+                  <InlineSetRow
                     key={set.id}
                     set={set}
                     index={i}
@@ -498,7 +415,6 @@ export default function ActiveWorkoutScreen() {
                     onComplete={handleCompleteSet}
                     onRemove={removeSet}
                     isLast={i === sets.length - 1}
-                    onTapLog={() => openLogModal(exercise.id, exercise.name, set.id, i)}
                   />
                 );
               })}
@@ -517,6 +433,12 @@ export default function ActiveWorkoutScreen() {
           <Text style={s.addExTxt}>Add Exercise</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Exercise detail sheet */}
+      <ExerciseDetailSheet
+        exerciseId={selectedExerciseId}
+        onClose={() => setSelectedExerciseId(null)}
+      />
 
       {/* Exercise picker modal */}
       <Modal visible={showExercisePicker} animationType="slide" presentationStyle="pageSheet">
@@ -555,29 +477,15 @@ export default function ActiveWorkoutScreen() {
           />
         </View>
       </Modal>
-
-      {/* Set log modal */}
-      {logModal && activeLogSet && (
-        <SetLogModal
-          visible={true}
-          exerciseName={logModal.exerciseName}
-          setIndex={logModal.setIndex}
-          weight={activeLogSet.weight_kg}
-          reps={activeLogSet.reps}
-          rpe={activeLogSet.rpe}
-          prevWeight={prevCompletedSet?.weight_kg ?? null}
-          prevReps={prevCompletedSet?.reps ?? null}
-          onSave={handleModalSave}
-          onClose={() => setLogModal(null)}
-        />
-      )}
     </View>
   );
 }
 
-function SetRow({
+// ── Inline set row with RPE expander ─────────────────────────
+
+function InlineSetRow({
   set, index, exerciseId, prevWeight, prevReps,
-  onUpdate, onComplete, onRemove, isLast, onTapLog,
+  onUpdate, onComplete, onRemove, isLast,
 }: {
   set: ActiveSet;
   index: number;
@@ -588,61 +496,99 @@ function SetRow({
   onComplete: (exId: string, setId: string) => void;
   onRemove: (exId: string, setId: string) => void;
   isLast: boolean;
-  onTapLog: () => void;
 }) {
+  const [rpeExpanded, setRpeExpanded] = useState(false);
+
   return (
-    <TouchableOpacity
-      activeOpacity={set.completed ? 1 : 0.7}
-      onPress={() => { if (!set.completed) onTapLog(); }}
-      onLongPress={() => onRemove(exerciseId, set.id)}
-      style={[
-        s.setRow,
-        set.completed && s.setRowDone,
-        !isLast && s.setRowBorder,
-      ]}
-    >
-      <Text style={s.setNum}>{index + 1}</Text>
-
-      <View style={{ flex: 1, alignItems: 'center' }}>
-        {prevWeight != null && (
-          <Text style={s.setPrev}>{formatWeight(prevWeight)}</Text>
-        )}
-        <TextInput
-          style={[s.setInput, set.completed && s.setInputDone]}
-          keyboardType="decimal-pad"
-          value={set.weight_kg > 0 ? formatWeight(set.weight_kg) : ''}
-          placeholder="0"
-          placeholderTextColor={COLORS.textDim}
-          onChangeText={v => onUpdate(exerciseId, set.id, { weight_kg: parseFloat(v) || 0 })}
-          editable={!set.completed}
-        />
-      </View>
-
-      <View style={{ flex: 1, alignItems: 'center' }}>
-        {prevReps != null && (
-          <Text style={s.setPrev}>{prevReps}</Text>
-        )}
-        <TextInput
-          style={[s.setInput, set.completed && s.setInputDone]}
-          keyboardType="number-pad"
-          value={set.reps > 0 ? String(set.reps) : ''}
-          placeholder="0"
-          placeholderTextColor={COLORS.textDim}
-          onChangeText={v => onUpdate(exerciseId, set.id, { reps: parseInt(v) || 0 })}
-          editable={!set.completed}
-        />
-      </View>
-
+    <View>
       <TouchableOpacity
-        style={[s.setCheck, set.completed && s.setCheckDone]}
-        onPress={() => {
-          if (set.completed) onUpdate(exerciseId, set.id, { completed: false });
-          else onTapLog();
-        }}
+        activeOpacity={1}
+        onLongPress={() => onRemove(exerciseId, set.id)}
+        style={[
+          s.setRow,
+          set.completed && s.setRowDone,
+          !isLast && s.setRowBorder,
+        ]}
       >
-        {set.completed && <Ionicons name="checkmark" size={18} color="white" />}
+        <Text style={s.setNum}>{index + 1}</Text>
+
+        {/* Weight */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          {prevWeight != null && <Text style={s.setPrev}>{formatWeight(prevWeight)}</Text>}
+          <TextInput
+            style={[s.setInput, set.completed && s.setInputDone]}
+            keyboardType="decimal-pad"
+            value={set.weight_kg > 0 ? formatWeight(set.weight_kg) : ''}
+            placeholder="0"
+            placeholderTextColor={COLORS.textDim}
+            onChangeText={v => onUpdate(exerciseId, set.id, { weight_kg: parseFloat(v) || 0 })}
+            editable={!set.completed}
+          />
+        </View>
+
+        {/* Reps */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          {prevReps != null && <Text style={s.setPrev}>{prevReps}</Text>}
+          <TextInput
+            style={[s.setInput, set.completed && s.setInputDone]}
+            keyboardType="number-pad"
+            value={set.reps > 0 ? String(set.reps) : ''}
+            placeholder="0"
+            placeholderTextColor={COLORS.textDim}
+            onChangeText={v => onUpdate(exerciseId, set.id, { reps: parseInt(v) || 0 })}
+            editable={!set.completed}
+          />
+        </View>
+
+        {/* RPE expander */}
+        <TouchableOpacity
+          style={[s.rpeToggle, set.rpe != null && s.rpeToggleActive]}
+          onPress={() => setRpeExpanded(v => !v)}
+          disabled={set.completed}
+        >
+          <Text style={[s.rpeToggleTxt, set.rpe != null && s.rpeToggleTxtActive]}>
+            {set.rpe != null ? String(set.rpe) : '+'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Checkmark */}
+        <TouchableOpacity
+          style={[s.setCheck, set.completed && s.setCheckDone]}
+          onPress={() => {
+            if (set.completed) {
+              onUpdate(exerciseId, set.id, { completed: false });
+            } else {
+              onComplete(exerciseId, set.id);
+            }
+          }}
+        >
+          {set.completed && <Ionicons name="checkmark" size={18} color="white" />}
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
+
+      {/* RPE picker row */}
+      {rpeExpanded && !set.completed && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.rpePickerRow}
+          contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingVertical: 6 }}
+        >
+          {RPE_OPTIONS.map(v => (
+            <TouchableOpacity
+              key={v}
+              style={[s.rpePill, set.rpe === v && s.rpePillActive]}
+              onPress={() => {
+                onUpdate(exerciseId, set.id, { rpe: set.rpe === v ? null : v });
+                if (set.rpe !== v) setRpeExpanded(false);
+              }}
+            >
+              <Text style={[s.rpePillTxt, set.rpe === v && s.rpePillTxtActive]}>{v}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -698,6 +644,14 @@ const s = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8,
   },
   coachText: { color: COLORS.primary, fontSize: 12, lineHeight: 18 },
+  coachCard: {
+    marginTop: 10,
+    backgroundColor: `${COLORS.blue}15`,
+    borderWidth: 0.5, borderColor: `${COLORS.blue}40`,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    maxWidth: '90%',
+  },
+  coachCardText: { color: COLORS.blue, fontSize: 13, lineHeight: 19, fontWeight: '500' },
   setsCard: {
     backgroundColor: COLORS.surface2, borderWidth: 0.5, borderColor: COLORS.border,
     borderRadius: 14, overflow: 'hidden',
@@ -718,6 +672,23 @@ const s = StyleSheet.create({
     paddingVertical: 4, textAlign: 'center', minWidth: 50,
   },
   setInputDone: { color: COLORS.green },
+  rpeToggle: {
+    width: 36, height: 36, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.surface3,
+    marginHorizontal: 2,
+  },
+  rpeToggleActive: { backgroundColor: `${COLORS.blue}30` },
+  rpeToggleTxt: { color: COLORS.ink3, fontSize: 12, fontWeight: '700' },
+  rpeToggleTxtActive: { color: COLORS.blue },
+  rpePickerRow: { backgroundColor: COLORS.surface3, borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
+  rpePill: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: COLORS.surface2, borderWidth: 0.5, borderColor: COLORS.border,
+  },
+  rpePillActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
+  rpePillTxt: { color: COLORS.ink2, fontWeight: '600', fontSize: 13 },
+  rpePillTxtActive: { color: COLORS.bg },
   setCheck: {
     width: 40, height: 40, borderRadius: 99,
     alignItems: 'center', justifyContent: 'center',
@@ -754,54 +725,4 @@ const s = StyleSheet.create({
   },
   pickerExName: { color: COLORS.ink, fontWeight: '500', fontSize: 15 },
   pickerExMeta: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
-});
-
-// SetLogModal styles
-const m = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: {
-    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  sheet: {
-    backgroundColor: COLORS.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingBottom: 40, paddingHorizontal: 24, paddingTop: 12,
-    borderTopWidth: 0.5, borderColor: COLORS.border,
-  },
-  grab: {
-    alignSelf: 'center', width: 40, height: 4,
-    borderRadius: 99, backgroundColor: COLORS.surface3, marginBottom: 16,
-  },
-  exName: { color: COLORS.ink, fontWeight: '800', fontSize: 20, marginBottom: 2 },
-  setLabel: { color: COLORS.ink3, fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  prevText: { color: COLORS.blue, fontSize: 13, marginBottom: 16, fontWeight: '500' },
-  fieldLabel: {
-    color: COLORS.ink3, fontSize: 12, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginTop: 16,
-  },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepBtn: {
-    width: 52, height: 52, borderRadius: 14,
-    backgroundColor: COLORS.surface2, borderWidth: 0.5, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepBtnTxt: { color: COLORS.ink, fontSize: 28, fontWeight: '300', lineHeight: 32 },
-  stepVal: {
-    flex: 1, textAlign: 'center', fontSize: 28, fontWeight: '800', color: COLORS.ink,
-    backgroundColor: COLORS.surface2, borderRadius: 14, paddingVertical: 10,
-  },
-  rpeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  rpePill: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: COLORS.surface2, borderWidth: 0.5, borderColor: COLORS.border,
-  },
-  rpePillActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
-  rpePillTxt: { color: COLORS.ink2, fontWeight: '600', fontSize: 14 },
-  rpePillTxtActive: { color: COLORS.bg },
-  rpeNote: { color: COLORS.ink3, fontSize: 13, marginTop: 8, fontStyle: 'italic' },
-  saveBtn: {
-    backgroundColor: COLORS.ink, borderRadius: 16,
-    paddingVertical: 16, alignItems: 'center', marginTop: 24,
-  },
-  saveBtnTxt: { color: COLORS.bg, fontWeight: '800', fontSize: 17 },
 });

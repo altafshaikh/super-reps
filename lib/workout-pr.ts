@@ -44,21 +44,24 @@ export function findBestSessionPR(
   exercises: ActiveExercise[],
   historicalMax: Record<string, number>,
 ): SessionPR | null {
-  let best: SessionPR | null = null;
+  const all = findAllSessionPRs(exercises, historicalMax);
+  if (!all.length) return null;
+  return all.reduce((best, pr) => pr.improvementKg > best.improvementKg ? pr : best);
+}
+
+/** All exercises where this session beat the historical max weight. */
+export function findAllSessionPRs(
+  exercises: ActiveExercise[],
+  historicalMax: Record<string, number>,
+): SessionPR[] {
+  const prs: SessionPR[] = [];
   for (const { exercise, sets } of exercises) {
     const completed = sets.filter(s => s.completed && s.weight_kg > 0);
     if (!completed.length) continue;
     const sessionMax = Math.max(...completed.map(s => s.weight_kg));
     const prev = historicalMax[exercise.id] ?? 0;
     if (prev <= 0 || sessionMax <= prev) continue;
-    const improvementKg = sessionMax - prev;
-    if (!best || improvementKg > best.improvementKg) {
-      best = {
-        exerciseName: exercise.name,
-        weightKg: sessionMax,
-        improvementKg,
-      };
-    }
+    prs.push({ exerciseName: exercise.name, weightKg: sessionMax, improvementKg: sessionMax - prev });
   }
-  return best;
+  return prs;
 }

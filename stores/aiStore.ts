@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AIRoutineJSON, Exercise } from '@/types';
 import { generateRoutine } from '@/lib/ai';
+import type { RoutineUserContext } from '@/lib/ai';
 
 type BuilderState = 'idle' | 'loading' | 'preview' | 'error';
 
@@ -9,7 +10,7 @@ interface AIStore {
   pendingRoutine: AIRoutineJSON | null;
   streamingText: string;
   errorMessage: string | null;
-  generate: (prompt: string, exercises: Exercise[]) => Promise<void>;
+  generate: (prompt: string, exercises: Exercise[], userContext?: RoutineUserContext) => Promise<void>;
   clearBuilder: () => void;
 }
 
@@ -19,12 +20,12 @@ export const useAIStore = create<AIStore>((set) => ({
   streamingText: '',
   errorMessage: null,
 
-  generate: async (prompt, exercises) => {
+  generate: async (prompt, exercises, userContext) => {
     set({ builderState: 'loading', streamingText: '', errorMessage: null, pendingRoutine: null });
     try {
       const routine = await generateRoutine(prompt, exercises, (text) => {
         set({ streamingText: text });
-      });
+      }, userContext);
       set({ builderState: 'preview', pendingRoutine: routine, streamingText: '' });
     } catch (e) {
       set({

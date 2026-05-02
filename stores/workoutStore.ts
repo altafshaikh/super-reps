@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { ActiveExercise, ActiveSet, Exercise, SetType } from '@/types';
 import { generateId } from '@/lib/utils';
+import { generateCoachingQueue } from '@/lib/workout-coaching';
+import type { UserProfile, RecentSessionSummary } from '@/lib/workout-coaching';
 
 interface WorkoutStore {
   // Active session
@@ -17,10 +19,18 @@ interface WorkoutStore {
   restActive: boolean;
 
   // Coach
-  coachText: Record<string, string>; // exerciseId -> advice
+  coachText: Record<string, string>;
+  coachingQueue: string[];
+  coachingQueueIndex: number;
 
   // Actions
-  startWorkout: (routineId?: string, routineName?: string, exercises?: Exercise[]) => void;
+  startWorkout: (
+    routineId?: string,
+    routineName?: string,
+    exercises?: Exercise[],
+    userProfile?: UserProfile,
+    recentSessions?: RecentSessionSummary[],
+  ) => void;
   addExercise: (exercise: Exercise) => void;
   removeExercise: (exerciseId: string) => void;
   addSet: (exerciseId: string) => void;
@@ -31,6 +41,7 @@ interface WorkoutStore {
   tickRest: () => void;
   skipRest: () => void;
   setCoachText: (exerciseId: string, text: string) => void;
+  nextCoachMessage: () => string | null;
   finishWorkout: () => { exercises: ActiveExercise[]; startedAt: Date; sessionId: string };
   resetWorkout: () => void;
 }
@@ -56,8 +67,10 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   restRemaining: 0,
   restActive: false,
   coachText: {},
+  coachingQueue: [],
+  coachingQueueIndex: 0,
 
-  startWorkout: (routineId, routineName, exercises = []) => {
+  startWorkout: (routineId, routineName, exercises = [], userProfile, recentSessions) => {
     set({
       sessionId: generateId(),
       routineId: routineId ?? null,
@@ -69,6 +82,19 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       })),
       isActive: true,
       coachText: {},
+      coachingQueue: [],
+      coachingQueueIndex: 0,
+    });
+
+    // Generate coaching queue silently in background
+    generateCoachingQueue(
+      routineName ?? null,
+      userProfile ?? {},
+      recentSessions ?? [],
+    ).then(queue => {
+      set({ coachingQueue: queue, coachingQueueIndex: 0 });
+    }).catch(() => {
+      // Silently fail — workout continues with empty queue
     });
   },
 
@@ -143,6 +169,14 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     set(s => ({ coachText: { ...s.coachText, [exerciseId]: text } }));
   },
 
+  nextCoachMessage: () => {
+    const { coachingQueue, coachingQueueIndex } = get();
+    if (coachingQueueIndex >= coachingQueue.length) return null;
+    const msg = coachingQueue[coachingQueueIndex];
+    set({ coachingQueueIndex: coachingQueueIndex + 1 });
+    return msg ?? null;
+  },
+
   finishWorkout: () => {
     const { exercises, startedAt, sessionId } = get();
     return { exercises, startedAt: startedAt!, sessionId: sessionId! };
@@ -153,6 +187,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       sessionId: null, routineId: null, routineName: null,
       startedAt: null, exercises: [], isActive: false,
       restRemaining: 0, restActive: false, coachText: {},
+      coachingQueue: [], coachingQueueIndex: 0,
     });
   },
 }));
