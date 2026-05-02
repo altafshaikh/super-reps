@@ -35,8 +35,22 @@ CREATE TABLE IF NOT EXISTS body_weight_logs (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   weight_kg   DECIMAL(6,2) NOT NULL,
-  logged_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  logged_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, logged_at)
 );
+
+-- Add unique constraint idempotently for databases created before this migration was updated
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'body_weight_logs'::regclass
+      AND contype = 'u'
+      AND conname = 'body_weight_logs_user_id_logged_at_key'
+  ) THEN
+    ALTER TABLE body_weight_logs ADD CONSTRAINT body_weight_logs_user_id_logged_at_key UNIQUE (user_id, logged_at);
+  END IF;
+END $$;
 
 ALTER TABLE body_weight_logs ENABLE ROW LEVEL SECURITY;
 

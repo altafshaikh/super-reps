@@ -417,12 +417,17 @@ function MeasuresTab() {
   const handleLog = async () => {
     if (!user) return;
     setLogging(true);
-    const today = new Date().toISOString().slice(0, 10);
-    await supabase.from('body_weight_logs').upsert(
-      { user_id: user.id, weight_kg: logWeight, logged_at: `${today}T00:00:00Z` },
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const { error } = await supabase.from('body_weight_logs').upsert(
+      { user_id: user.id, weight_kg: logWeight, logged_at: `${today}T00:00:00+00:00` },
       { onConflict: 'user_id,logged_at' },
     );
-    await fetchLogs();
+    if (error) {
+      Alert.alert('Could not log weight', error.message);
+    } else {
+      await fetchLogs();
+    }
     setLogging(false);
   };
 
@@ -1121,21 +1126,6 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
         </SRCard>
       )}
 
-      {/* Data card */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => router.push('/profile/import-export')}
-        style={s.dataCard}
-      >
-        <View style={s.dataCardInner}>
-          <Ionicons name="swap-horizontal-outline" size={22} color={COLORS.blue} />
-          <View style={{ flex: 1 }}>
-            <Text style={s.dataCardTitle}>Import / Export</Text>
-            <Text style={s.dataCardSub}>Hevy workout CSV → import past sessions</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
-        </View>
-      </TouchableOpacity>
 
       {/* Workouts feed */}
       <Text style={s.sectionKicker}>Workouts</Text>
@@ -1571,10 +1561,6 @@ const s = StyleSheet.create({
   prRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 20 },
   prName: { fontSize: 14, fontWeight: '600', color: COLORS.ink, flex: 1, marginRight: 12 },
   prVal: { fontSize: 15, fontWeight: '800', color: COLORS.green },
-  dataCard: { backgroundColor: COLORS.surface, borderRadius: 16, borderWidth: 0.5, borderColor: COLORS.border, marginBottom: 10, marginHorizontal: 2 },
-  dataCardInner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, paddingHorizontal: 16 },
-  dataCardTitle: { fontSize: 15, fontWeight: '800', color: COLORS.ink },
-  dataCardSub: { fontSize: 12, color: COLORS.ink3, marginTop: 3 },
   sectionKicker: { fontSize: 11, color: COLORS.ink3, fontWeight: '800', letterSpacing: 1.1, marginBottom: 8, marginTop: 4, marginLeft: 6, textTransform: 'uppercase' },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 14 },
   avatarXs: { width: 36, height: 36, borderRadius: 999, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
