@@ -1,3 +1,5 @@
+export { BarChart } from './BarChart';
+export { LineChart } from './LineChart';
 export { SRCard } from './SRCard';
 export { SRPill } from './SRPill';
 export { SRMetric } from './SRMetric';

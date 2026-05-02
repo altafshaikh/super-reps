@@ -17,8 +17,9 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="workouts" />
       <Tabs.Screen name="ai" />
-      <Tabs.Screen name="progress" />
       <Tabs.Screen name="profile" />
+      {/* Progress tab removed from nav — file kept for data extraction reference */}
+      <Tabs.Screen name="progress" options={{ href: null }} />
       {/* Full routines list + Import (hidden from tab bar) */}
       <Tabs.Screen name="routines" options={{ href: null }} />
     </Tabs>

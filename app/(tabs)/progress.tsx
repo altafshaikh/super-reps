@@ -4,12 +4,11 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Path, Defs, LinearGradient, Stop, Line, Text as SvgText } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { getWeeklyReview } from '@/lib/ai';
 import { COLORS } from '@/constants';
-import { SRCard, SRPill, SRDivider, SRSectionLabel } from '@/components/ui';
+import { SRCard, SRPill, SRDivider, SRSectionLabel, LineChart } from '@/components/ui';
 
 type Period = '4W' | '3M' | 'All';
 
@@ -31,97 +30,6 @@ interface SetRow {
 }
 
 interface WeeklyVolume { week: string; vol: number }
-
-// ── SVG Area Chart ────────────────────────────────────────────
-
-function AreaChart({ data, width = 300, height = 90 }: { data: WeeklyVolume[]; width?: number; height?: number }) {
-  if (data.length < 2) return null;
-  const pad = { l: 4, r: 4, t: 10, b: 20 };
-  const W = width - pad.l - pad.r;
-  const H = height - pad.t - pad.b;
-  const vols = data.map(d => d.vol);
-  const maxV = Math.max(...vols);
-  const minV = Math.min(...vols) * 0.85;
-  const range = maxV - minV || 1;
-
-  const pts = data.map((d, i) => ({
-    x: pad.l + (i / (data.length - 1)) * W,
-    y: pad.t + H - ((d.vol - minV) / range) * H,
-    label: d.week,
-    vol: d.vol,
-  }));
-
-  const lineParts = pts.map((p, i) => {
-    if (i === 0) return `M ${p.x} ${p.y}`;
-    const prev = pts[i - 1];
-    const cx = (prev.x + p.x) / 2;
-    return `C ${cx} ${prev.y} ${cx} ${p.y} ${p.x} ${p.y}`;
-  });
-  const linePath = lineParts.join(' ');
-  const last = pts[pts.length - 1];
-  const first = pts[0];
-  const areaPath = `${linePath} L ${last.x} ${height - pad.b} L ${first.x} ${height - pad.b} Z`;
-
-  return (
-    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <Defs>
-        <LinearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={COLORS.ink} stopOpacity="0.18" />
-          <Stop offset="100%" stopColor={COLORS.ink} stopOpacity="0" />
-        </LinearGradient>
-      </Defs>
-      {[0, 0.5, 1].map((t, i) => (
-        <Line key={i} x1={pad.l} x2={width - pad.r}
-          y1={pad.t + H * (1 - t)} y2={pad.t + H * (1 - t)}
-          stroke={COLORS.border} strokeWidth="0.5" />
-      ))}
-      <Path d={areaPath} fill="url(#vg)" />
-      <Path d={linePath} fill="none" stroke={COLORS.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {pts.map((p, i) => (
-        <Circle key={i} cx={p.x} cy={p.y}
-          r={i === pts.length - 1 ? 4 : 2.5}
-          fill={i === pts.length - 1 ? COLORS.ink : COLORS.bg}
-          stroke={COLORS.ink} strokeWidth={i === pts.length - 1 ? 0 : 1.5} />
-      ))}
-      {pts.map((p, i) => (
-        <SvgText key={i} x={p.x} y={height - 3} textAnchor="middle"
-          fontSize="9" fill={i === pts.length - 1 ? COLORS.ink : COLORS.ink3}
-          fontWeight={i === pts.length - 1 ? '700' : '400'}>
-          {p.label}
-        </SvgText>
-      ))}
-      <SvgText x={last.x} y={last.y - 8} textAnchor="middle"
-        fontSize="10" fontWeight="700" fill={COLORS.ink}>
-        {last.vol >= 1000 ? `${(last.vol / 1000).toFixed(1)}k` : String(last.vol)}
-      </SvgText>
-    </Svg>
-  );
-}
-
-// ── Mini sparkline ────────────────────────────────────────────
-
-function Sparkline({ values, width = 48, height = 20 }: { values: number[]; width?: number; height?: number }) {
-  if (values.length < 2) return null;
-  const max = Math.max(...values), min = Math.min(...values);
-  const range = max - min || 1;
-  const pts = values.map((v, i) => ({
-    x: (i / (values.length - 1)) * width,
-    y: height - ((v - min) / range) * (height * 0.8) - height * 0.1,
-  }));
-  const path = pts.map((p, i) => {
-    if (i === 0) return `M ${p.x} ${p.y}`;
-    const prev = pts[i - 1];
-    const cx = (prev.x + p.x) / 2;
-    return `C ${cx} ${prev.y} ${cx} ${p.y} ${p.x} ${p.y}`;
-  }).join(' ');
-  const last = pts[pts.length - 1];
-  return (
-    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <Path d={path} fill="none" stroke={COLORS.ink3} strokeWidth="1.5" strokeLinecap="round" />
-      <Circle cx={last.x} cy={last.y} r="2.5" fill={COLORS.ink3} />
-    </Svg>
-  );
-}
 
 // ── Heatmap ───────────────────────────────────────────────────
 
@@ -317,7 +225,6 @@ export default function ProgressScreen() {
         from: vals[0],
         to: vals[vals.length - 1],
         gain: +(vals[vals.length - 1] - vals[0]).toFixed(1),
-        sparkline: vals,
       }))
       .filter(r => r.gain > 0)
       .sort((a, b) => b.gain - a.gain)
@@ -417,7 +324,7 @@ export default function ProgressScreen() {
                 <Text style={[s.cardSub, { color: COLORS.green }]}>↑ Best week</Text>
               </View>
             </View>
-            <AreaChart data={weeklyVolume} width={320} height={100} />
+            <LineChart data={weeklyVolume.map(d => ({ label: d.week, value: d.vol }))} width={320} />
           </SRCard>
         )}
 
@@ -453,7 +360,7 @@ export default function ProgressScreen() {
                     <Text style={[s.liftBigVal, { color: COLORS.ink3, fontSize: 18 }]}>{liftStart} kg</Text>
                   </View>
                 </View>
-                <AreaChart data={liftData.map((v, i) => ({ week: `W${i + 1}`, vol: v }))} width={320} height={88} />
+                <LineChart data={liftData.map((v, i) => ({ label: `W${i + 1}`, value: v }))} width={320} />
               </View>
             )}
             <View style={s.divider} />
@@ -482,10 +389,7 @@ export default function ProgressScreen() {
               <View key={i} style={{ marginBottom: i < muscleFocus.length - 1 ? 12 : 0 }}>
                 <View style={s.muscleRow}>
                   <Text style={s.muscleName}>{m.name.replace('_', ' ')}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Sparkline values={[m.pct - 12, m.pct - 8, m.pct - 4, m.pct - 2, m.pct].map(v => Math.max(0, v))} />
-                    <Text style={s.musclePct}>{m.pct}%</Text>
-                  </View>
+                  <Text style={s.musclePct}>{m.pct}%</Text>
                 </View>
                 <View style={s.muscleBarBg}>
                   <View style={[s.muscleBarFill, { width: `${m.pct}%` as any }]} />
@@ -500,8 +404,8 @@ export default function ProgressScreen() {
           <SRCard>
             <SRSectionLabel>{`Lift PRs — ${period}`}</SRSectionLabel>
             <View style={[s.prHeaderRow, { paddingHorizontal: 16, paddingBottom: 6 }]}>
-              {['Lift', '', 'Start', 'Now', '+'].map((h, i) => (
-                <Text key={i} style={[s.prHeaderCell, { flex: i === 0 ? 2 : i === 1 ? 1.2 : 1 }]}>{h}</Text>
+              {['Lift', 'Start', 'Now', '+'].map((h, i) => (
+                <Text key={i} style={[s.prHeaderCell, { flex: i === 0 ? 2 : 1 }]}>{h}</Text>
               ))}
             </View>
             {prTable.map((row, i) => (
@@ -509,9 +413,6 @@ export default function ProgressScreen() {
                 <SRDivider />
                 <View style={[s.prRow, { paddingHorizontal: 16, paddingVertical: 10 }]}>
                   <Text style={[s.prCell, { flex: 2 }]}>{row.lift}</Text>
-                  <View style={{ flex: 1.2, alignItems: 'flex-start' }}>
-                    <Sparkline values={row.sparkline} />
-                  </View>
                   <Text style={[s.prCellDim, { flex: 1 }]}>{row.from} kg</Text>
                   <Text style={[s.prCellBold, { flex: 1 }]}>{row.to} kg</Text>
                   <View style={{ flex: 1 }}>
