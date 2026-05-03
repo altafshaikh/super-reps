@@ -14,6 +14,10 @@ import { formatWeight } from '@/lib/utils';
 import { COLORS } from '@/constants';
 import { SRCard, SRDivider, SRSectionLabel } from '@/components/ui';
 
+function formatMuscle(m: string): string {
+  return m.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+}
+
 function greeting(): string {
   const h = new Date().getHours();
   if (h >= 5 && h < 12) return 'Good morning';
@@ -182,9 +186,25 @@ export default function HomeScreen() {
     router.push('/workout/active');
   };
 
-  const routineExCount = firstRoutine
-    ? (firstRoutine.days ?? []).reduce((n, d) => n + (d.exercises?.length ?? 0), 0)
-    : 0;
+  const routineDay = firstRoutine
+    ? (firstRoutine.days ?? []).find(d => (d.exercises?.length ?? 0) > 0) ?? null
+    : null;
+  const dayExercises = routineDay?.exercises ?? [];
+  const previewExercises = dayExercises.slice(0, 3);
+  const extraCount = Math.max(0, dayExercises.length - 3);
+
+  const muscleTags = useMemo(() => {
+    const groups = new Set<string>();
+    dayExercises.forEach(re => re.exercise?.muscle_groups?.forEach(mg => groups.add(mg)));
+    return Array.from(groups).slice(0, 4);
+  }, [firstRoutine]);
+
+  const estimatedMinutes = useMemo(() => {
+    if (!dayExercises.length) return 0;
+    const totalSets = dayExercises.reduce((n, re) => n + (re.sets ?? 0), 0);
+    const avgRest = dayExercises.reduce((sum, re) => sum + (re.rest_seconds ?? 90), 0) / dayExercises.length;
+    return Math.round(totalSets * (avgRest + 30) / 60);
+  }, [firstRoutine]);
 
   if (loading) {
     return (
@@ -233,17 +253,45 @@ export default function HomeScreen() {
         {/* Routine / start card */}
         {!isActive && (
           <SRCard style={s.routineCard}>
-            <View style={s.routineBody}>
-              <Text style={s.routineLabel}>{firstRoutine ? 'TODAY\'S ROUTINE' : 'START TRAINING'}</Text>
-              <Text style={s.routineName} numberOfLines={1}>
-                {firstRoutine?.name ?? 'Empty Workout'}
-              </Text>
-              {firstRoutine && (
-                <Text style={s.routineMeta}>{routineExCount} exercises</Text>
+            <View style={s.routineHeader}>
+              <Text style={s.routineLabel}>{firstRoutine ? "TODAY'S PLAN" : 'START TRAINING'}</Text>
+              {estimatedMinutes > 0 && (
+                <View style={s.durationBadge}>
+                  <Text style={s.durationText}>~{estimatedMinutes} min</Text>
+                </View>
               )}
             </View>
+
+            <Text style={s.routineName} numberOfLines={1}>
+              {firstRoutine?.name ?? 'Empty Workout'}
+            </Text>
+
+            {muscleTags.length > 0 && (
+              <View style={s.tagRow}>
+                {muscleTags.map(tag => (
+                  <View key={tag} style={s.tag}>
+                    <Text style={s.tagText}>{formatMuscle(tag)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {dayExercises.length > 0 && (
+              <View style={s.exerciseList}>
+                {previewExercises.map(re => (
+                  <View key={re.id} style={s.exerciseRow}>
+                    <Text style={s.exerciseName} numberOfLines={1}>{re.exercise?.name}</Text>
+                    <Text style={s.exerciseSets}>{re.sets}×{re.rep_range}</Text>
+                  </View>
+                ))}
+                {extraCount > 0 && (
+                  <Text style={s.moreExercises}>+{extraCount} more exercise{extraCount > 1 ? 's' : ''}</Text>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity style={s.startBtn} onPress={handleStartRoutine} activeOpacity={0.85}>
-              <Text style={s.startBtnTxt}>Start →</Text>
+              <Text style={s.startBtnTxt}>Start Workout →</Text>
             </TouchableOpacity>
           </SRCard>
         )}
@@ -300,13 +348,22 @@ const s = StyleSheet.create({
   streakVal: { fontSize: 22, fontWeight: '900', color: COLORS.ink },
   streakLab: { fontSize: 12, color: COLORS.ink3 },
 
-  routineCard: { flexDirection: 'row', alignItems: 'center' },
-  routineBody: { flex: 1, padding: 16 },
-  routineLabel: { fontSize: 10, color: COLORS.ink3, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
-  routineName: { fontSize: 20, fontWeight: '900', color: COLORS.ink },
-  routineMeta: { fontSize: 12, color: COLORS.ink3, marginTop: 3 },
-  startBtn: { backgroundColor: COLORS.ink, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 18, margin: 12 },
-  startBtnTxt: { color: COLORS.bg, fontWeight: '800', fontSize: 14 },
+  routineCard: { padding: 16, gap: 10 },
+  routineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  routineLabel: { fontSize: 10, color: COLORS.ink3, fontWeight: '800', letterSpacing: 1 },
+  durationBadge: { backgroundColor: COLORS.surface2, borderRadius: 20, paddingVertical: 4, paddingHorizontal: 10 },
+  durationText: { fontSize: 12, color: COLORS.ink, fontWeight: '700' },
+  routineName: { fontSize: 26, fontWeight: '900', color: COLORS.ink },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: { backgroundColor: COLORS.surface2, borderRadius: 20, paddingVertical: 5, paddingHorizontal: 10 },
+  tagText: { fontSize: 12, color: COLORS.ink3, fontWeight: '600' },
+  exerciseList: { backgroundColor: COLORS.surface2, borderRadius: 12, paddingVertical: 4 },
+  exerciseRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 14 },
+  exerciseName: { fontSize: 14, fontWeight: '600', color: COLORS.ink, flex: 1, marginRight: 12 },
+  exerciseSets: { fontSize: 13, fontWeight: '700', color: COLORS.ink3 },
+  moreExercises: { textAlign: 'center', fontSize: 12, color: COLORS.ink3, fontWeight: '600', paddingVertical: 8 },
+  startBtn: { backgroundColor: COLORS.ink, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  startBtnTxt: { color: COLORS.bg, fontWeight: '800', fontSize: 16 },
 
   heatmapCard: { padding: 16 },
   heatmapHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
