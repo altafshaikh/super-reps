@@ -7,6 +7,12 @@ const client = new Groq({
   dangerouslyAllowBrowser: true,
 });
 
+export type ChatMessage = { role: 'user' | 'assistant'; content: string };
+export type ConversationResult =
+  | { type: 'message'; text: string }
+  | { type: 'generate'; prompt: string }
+  | { type: 'import'; prompt: string };
+
 // Models
 const ROUTINE_MODEL = 'llama-3.3-70b-versatile';   // best quality for programme generation
 const COACH_MODEL   = 'llama-3.1-8b-instant';       // fast + cheap for real-time coaching
@@ -43,11 +49,78 @@ export type RoutineUserContext = {
   topPRs?: { exerciseName: string; weightKg: number }[];
 };
 
+export async function conductConversation(
+  messages: ChatMessage[],
+  exercises: Exercise[],
+  userContext?: RoutineUserContext,
+  onChunk?: (text: string) => void,
+): Promise<ConversationResult> {
+  const exerciseList = exercises
+    .map(e => `${e.slug}|${e.name}|${e.category}`)
+    .join('\n');
+
+  const systemPrompt = `You are SuperReps AI — a personal trainer having a focused conversation to build the perfect workout programme.
+
+IMPORT DETECTION (check user's FIRST message only):
+If the message contains a structured workout copied from another fitness app (exercise names with sets/reps listed out), respond ONLY with valid JSON:
+{"type":"import","prompt":"<copy the user's message verbatim>"}
+
+QUESTIONNAIRE MODE (for fresh builds):
+Ask exactly one focused question per turn. Collect in this order:
+1. Goal (strength, hypertrophy/muscle growth, fat loss, general fitness)
+2. Days per week available for training
+3. Equipment (full gym, dumbbells only, home, bodyweight only)
+4. Experience level (beginner, intermediate, advanced)
+5. Specific exercises they MUST include — ask this explicitly, don't assume
+6. Exercises to avoid (injuries, dislikes)
+
+When you have enough to build a complete programme (at minimum: goal + days + exercise preferences), respond ONLY with valid JSON:
+{"type":"generate","prompt":"<comprehensive programme description including every collected detail: goal, days, equipment, level, required exercises, exercises to avoid>"}
+
+Otherwise respond with your next question as plain conversational text (1-3 sentences max). Do NOT include JSON in conversational replies.
+
+Available exercise library (slug|name|category):
+${exerciseList}`;
+
+  const groqMessages: Groq.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+  ];
+
+  let fullText = '';
+  const stream = await client.chat.completions.create({
+    model: ROUTINE_MODEL,
+    messages: groqMessages,
+    max_tokens: 600,
+    temperature: 0.5,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? '';
+    fullText += delta;
+    onChunk?.(fullText);
+  }
+
+  const trimmed = fullText.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.type === 'import' && parsed.prompt) return { type: 'import', prompt: parsed.prompt };
+      if (parsed.type === 'generate' && parsed.prompt) return { type: 'generate', prompt: parsed.prompt };
+    } catch {
+      // not valid JSON — treat as message
+    }
+  }
+  return { type: 'message', text: trimmed };
+}
+
 export async function generateRoutine(
   userPrompt: string,
   exercises: Exercise[],
   onChunk?: (text: string) => void,
   userContext?: RoutineUserContext,
+  importMode = false,
 ): Promise<AIRoutineJSON> {
   const exerciseList = exercises
     .map(e => `${e.slug}|${e.name}|${e.category}|${e.equipment.join(',')}`)
@@ -70,12 +143,33 @@ export async function generateRoutine(
   }
   const contextBlock = contextLines.length > 0 ? `\nUser profile:\n${contextLines.join('\n')}\n` : '';
 
-  const messages: Groq.Chat.ChatCompletionMessageParam[] = [
-    {
-      role: 'system',
-      content: `You are SuperReps AI — an expert personal trainer.
+  const importSystemPrompt = `You are SuperReps AI — an expert personal trainer.
+The user is importing a workout from another app. Create an EXACT copy.
+
+CRITICAL RULES:
+- Preserve every exercise, the exact order, sets, and rep ranges as given
+- Map each exercise name to the closest matching slug from the provided library
+- Do NOT add or remove exercises, do NOT reorder them
+- Do NOT apply progressive overload or muscle-balance logic — copy faithfully
+- Include rest days (empty exercises array, name = "Rest") where indicated
+- Return ONLY valid JSON — no markdown, no explanation
+
+JSON schema:
+{
+  "name": string,
+  "description": string,
+  "days_per_week": number,
+  "goal": "hypertrophy"|"strength"|"endurance"|"recomp",
+  "level": "beginner"|"intermediate"|"advanced",
+  "days": [{ "day_index": number, "name": string, "exercises": [{ "exercise_slug": string, "sets": number, "rep_range": string, "rir": number, "rest_seconds": number, "notes"?: string }] }],
+  "progression": string,
+  "deload_week": number
+}`;
+
+  const standardSystemPrompt = `You are SuperReps AI — an expert personal trainer.
 Generate a complete workout programme as valid JSON.
 Rules:
+- Follow the user's requested exercises exactly — do NOT substitute or omit any exercise they specified
 - Use progressive overload principles
 - Balance muscle groups appropriately
 - Include rest days (exercises array empty, name = "Rest")
@@ -92,7 +186,12 @@ JSON schema:
   "days": [{ "day_index": number, "name": string, "exercises": [{ "exercise_slug": string, "sets": number, "rep_range": string, "rir": number, "rest_seconds": number, "notes"?: string }] }],
   "progression": string,
   "deload_week": number
-}`,
+}`;
+
+  const messages: Groq.Chat.ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content: importMode ? importSystemPrompt : standardSystemPrompt,
     },
     {
       role: 'user',

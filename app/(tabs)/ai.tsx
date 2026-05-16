@@ -22,7 +22,8 @@ import { useAIStore } from '@/stores/aiStore';
 import { useUserStore } from '@/stores/userStore';
 import { COLORS } from '@/constants';
 import type { AIRoutineJSON, Exercise } from '@/types';
-import type { RoutineUserContext } from '@/lib/ai';
+import { conductConversation } from '@/lib/ai';
+import type { RoutineUserContext, ChatMessage } from '@/lib/ai';
 
 const SCREEN_BG = '#0a0c14';
 const AI_CARD = '#141824';
@@ -30,13 +31,13 @@ const AI_BUBBLE = '#1a1e2e';
 const MODEL_LINE = 'llama-3.3-70b-versatile · Groq';
 
 const INTRO_AI =
-  "I'll build a personalised programme from your exercise library. Tell me your goal, days available, and any constraints — then tap send.";
+  "I'll help you build a personalised workout programme. Tell me what you have in mind — or paste a workout from another app to import it exactly.";
 
 const AI_CHIPS: { label: string; prompt: string }[] = [
-  { label: 'Build me a 4-day push/pull split', prompt: 'Build me a 4-day push/pull split programme with barbell and dumbbell exercises.' },
-  { label: 'I only have 3 days, what do you recommend?', prompt: 'I can only train 3 days a week. What programme do you recommend for overall strength and muscle?' },
-  { label: 'Analyse my training and suggest improvements', prompt: 'Based on my recent training history and PRs, analyse my programme and suggest improvements.' },
-  { label: 'I want to focus more on legs', prompt: 'I want to focus more on leg development. Build me a programme that prioritises quads, hamstrings and glutes.' },
+  { label: 'Build from scratch', prompt: 'I want to build a new workout programme from scratch.' },
+  { label: 'Import my current plan', prompt: 'I want to import my current workout plan from another app.' },
+  { label: 'I only have 3 days a week', prompt: 'I can only train 3 days a week and want a balanced programme.' },
+  { label: 'Focus on legs & glutes', prompt: 'I want a programme that heavily prioritises leg and glute development.' },
 ];
 
 function dayBadgeLabel(day: { name: string }): string {
@@ -52,11 +53,14 @@ export default function AITab() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const { user } = useUserStore();
-  const { builderState, streamingText, pendingRoutine, errorMessage, generate, clearBuilder } = useAIStore();
+  const { builderState, streamingText, pendingRoutine, errorMessage, generate, clearBuilder, setBuilderState, setStreamingText } = useAIStore();
   const [prompt, setPrompt] = useState('');
   const [saving, setSaving] = useState(false);
-  const [displayedUserPrompt, setDisplayedUserPrompt] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [aiStreamText, setAiStreamText] = useState('');
   const lastGenerationPrompt = useRef('');
+  const cachedExercises = useRef<Exercise[]>([]);
+  const cachedUserContext = useRef<RoutineUserContext>({});
   const reduceMotion = useReduceMotion();
 
   const scrollToEnd = useCallback(() => {
@@ -65,21 +69,18 @@ export default function AITab() {
 
   useEffect(() => {
     scrollToEnd();
-  }, [builderState, displayedUserPrompt, pendingRoutine, scrollToEnd]);
+  }, [builderState, chatMessages, pendingRoutine, aiStreamText, scrollToEnd]);
 
   const resetSession = useCallback(() => {
     clearBuilder();
     setPrompt('');
-    setDisplayedUserPrompt(null);
+    setChatMessages([]);
+    setAiStreamText('');
     lastGenerationPrompt.current = '';
   }, [clearBuilder]);
 
-  const handleGenerate = async (text: string) => {
-    const t = text.trim();
-    if (!t) return;
-    lastGenerationPrompt.current = t;
-    setDisplayedUserPrompt(t);
-    setPrompt('');
+  const loadExercisesAndContext = async () => {
+    if (cachedExercises.current.length > 0) return;
 
     const [exercisesRes, sessionsRes, setsRes] = await Promise.all([
       supabase.from('exercises').select('*').limit(150),
@@ -97,8 +98,9 @@ export default function AITab() {
         .limit(500) : Promise.resolve({ data: null }),
     ]);
 
-    const userContext: RoutineUserContext = {};
+    cachedExercises.current = (exercisesRes.data ?? []) as Exercise[];
 
+    const userContext: RoutineUserContext = {};
     if (sessionsRes.data?.length) {
       userContext.recentSessions = sessionsRes.data.map(s => ({
         date: s.started_at.slice(0, 10),
@@ -106,9 +108,7 @@ export default function AITab() {
         volumeKg: Number(s.volume_total ?? 0),
       }));
     }
-
     if (setsRes.data?.length) {
-      // Top muscles by set count
       const muscleCounts: Record<string, number> = {};
       const exerciseMaxes: Record<string, { name: string; max: number }> = {};
       for (const row of setsRes.data as any[]) {
@@ -121,28 +121,58 @@ export default function AITab() {
         }
       }
       userContext.topMuscles = Object.entries(muscleCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
+        .sort((a, b) => b[1] - a[1]).slice(0, 5)
         .map(([muscle, count]) => ({ muscle, count }));
       userContext.topPRs = Object.values(exerciseMaxes)
-        .sort((a, b) => b.max - a.max)
-        .slice(0, 5)
+        .sort((a, b) => b.max - a.max).slice(0, 5)
         .map(p => ({ exerciseName: p.name, weightKg: p.max }));
     }
-
-    await generate(t, (exercisesRes.data ?? []) as Exercise[], userContext);
+    cachedUserContext.current = userContext;
   };
 
-  const handleSend = () => {
-    if (!prompt.trim() || builderState === 'loading') return;
-    void handleGenerate(prompt);
+  const handleSend = async () => {
+    const t = prompt.trim();
+    if (!t || builderState === 'loading' || builderState === 'thinking') return;
+    setPrompt('');
+
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: t }];
+    setChatMessages(newMessages);
+    setBuilderState('thinking');
+    setAiStreamText('');
+
+    await loadExercisesAndContext();
+
+    try {
+      const result = await conductConversation(
+        newMessages,
+        cachedExercises.current,
+        cachedUserContext.current,
+        (chunk) => setAiStreamText(chunk),
+      );
+      setAiStreamText('');
+
+      if (result.type === 'message') {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: result.text }]);
+        setBuilderState('chatting');
+      } else {
+        const confirmText = result.type === 'import'
+          ? "Got it — importing your workout now. Matching exercises from your library…"
+          : "Perfect, I have everything I need. Building your programme now…";
+        setChatMessages(prev => [...prev, { role: 'assistant', content: confirmText }]);
+        lastGenerationPrompt.current = result.prompt;
+        await generate(result.prompt, cachedExercises.current, cachedUserContext.current, result.type === 'import');
+      }
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
+      setBuilderState('chatting');
+    }
   };
 
   const handleRegenerate = async () => {
     const t = lastGenerationPrompt.current;
     if (!t.trim() || builderState === 'loading') return;
-    const { data: exercises } = await supabase.from('exercises').select('*').limit(150);
-    await generate(t, (exercises ?? []) as Exercise[]);
+    await loadExercisesAndContext();
+    await generate(t, cachedExercises.current, cachedUserContext.current);
   };
 
   const handleSave = async () => {
@@ -201,6 +231,7 @@ export default function AITab() {
     setSaving(false);
   };
 
+  const isProcessing = builderState === 'thinking' || builderState === 'loading';
   const showRoutineCard = builderState === 'preview' && pendingRoutine;
 
   return (
@@ -254,32 +285,61 @@ export default function AITab() {
             </View>
           </Animated.View>
 
-          {displayedUserPrompt ? (
+          {/* Full chat history */}
+          {chatMessages.map((msg, i) =>
+            msg.role === 'user' ? (
+              <Animated.View
+                key={i}
+                entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(220).springify()}
+                style={s.userBubbleWrap}
+              >
+                <View style={s.userBubble}>
+                  <Text style={s.userBubbleText}>{msg.content}</Text>
+                </View>
+              </Animated.View>
+            ) : (
+              <Animated.View
+                key={i}
+                entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(220).springify()}
+                style={s.aiBubbleWrap}
+              >
+                <View style={s.aiBubble}>
+                  <Text style={s.aiBubbleText}>{msg.content}</Text>
+                </View>
+              </Animated.View>
+            )
+          )}
+
+          {/* Streaming AI reply (while thinking) */}
+          {builderState === 'thinking' ? (
             <Animated.View
-              key={displayedUserPrompt}
               entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
-              style={s.userBubbleWrap}
+              style={s.aiBubbleWrap}
             >
-              <View style={s.userBubble}>
-                <Text style={s.userBubbleText}>{displayedUserPrompt}</Text>
+              <View style={s.aiBubble}>
+                {aiStreamText ? (
+                  <Text style={s.aiBubbleText}>{aiStreamText}</Text>
+                ) : (
+                  <View style={s.typingBubble}>
+                    <ActivityIndicator color={COLORS.ink2} size="small" />
+                    <Text style={s.typingText}>Thinking…</Text>
+                  </View>
+                )}
               </View>
             </Animated.View>
           ) : null}
 
+          {/* Routine generation streaming */}
           {builderState === 'loading' ? (
             <Animated.View
               entering={reduceMotion ? FadeIn.duration(1) : FadeInDown.duration(250).springify()}
               style={s.aiBubbleWrap}
             >
               <View style={s.aiBubble}>
-                {streamingText ? (
-                  <Text style={s.aiBubbleText}>{streamingText}</Text>
-                ) : (
-                  <View style={s.typingBubble}>
-                    <ActivityIndicator color={COLORS.ink2} size="small" />
-                    <Text style={s.typingText}>Building your programme…</Text>
-                  </View>
-                )}
+                <View style={s.typingBubble}>
+                  <ActivityIndicator color={COLORS.ink2} size="small" />
+                  <Text style={s.typingText}>Building your programme…</Text>
+                </View>
               </View>
             </Animated.View>
           ) : null}
@@ -314,41 +374,44 @@ export default function AITab() {
         </ScrollView>
 
         <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.chipsRow}
-            keyboardShouldPersistTaps="handled"
-          >
-            {AI_CHIPS.map((chip) => (
-              <TouchableOpacity
-                key={chip.label}
-                style={s.chip}
-                onPress={() => setPrompt(chip.prompt)}
-                activeOpacity={0.75}
-              >
-                <Text style={s.chipText}>{chip.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* Show chips only when idle (no conversation started) */}
+          {builderState === 'idle' && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.chipsRow}
+              keyboardShouldPersistTaps="handled"
+            >
+              {AI_CHIPS.map((chip) => (
+                <TouchableOpacity
+                  key={chip.label}
+                  style={s.chip}
+                  onPress={() => setPrompt(chip.prompt)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.chipText}>{chip.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
           <View style={s.composerRow}>
             <TextInput
               style={s.composerInput}
-              placeholder="Describe your programme…"
+              placeholder={builderState === 'idle' ? "Describe your programme or paste a workout…" : "Reply…"}
               placeholderTextColor={COLORS.ink3}
               value={prompt}
               onChangeText={setPrompt}
               multiline
-              maxLength={2000}
-              editable={builderState !== 'loading'}
+              maxLength={4000}
+              editable={!isProcessing && builderState !== 'preview'}
             />
             <TouchableOpacity
-              style={[s.sendBtn, !prompt.trim() && s.sendBtnDisabled]}
-              onPress={handleSend}
-              disabled={!prompt.trim() || builderState === 'loading'}
+              style={[s.sendBtn, (!prompt.trim() || isProcessing || builderState === 'preview') && s.sendBtnDisabled]}
+              onPress={() => void handleSend()}
+              disabled={!prompt.trim() || isProcessing || builderState === 'preview'}
               activeOpacity={0.85}
             >
-              {builderState === 'loading' ? (
+              {isProcessing ? (
                 <ActivityIndicator color={SCREEN_BG} size="small" />
               ) : (
                 <Ionicons name="arrow-forward" size={22} color={SCREEN_BG} />

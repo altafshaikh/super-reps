@@ -3,15 +3,17 @@ import type { AIRoutineJSON, Exercise } from '@/types';
 import { generateRoutine } from '@/lib/ai';
 import type { RoutineUserContext } from '@/lib/ai';
 
-type BuilderState = 'idle' | 'loading' | 'preview' | 'error';
+export type BuilderState = 'idle' | 'chatting' | 'thinking' | 'loading' | 'preview' | 'error';
 
 interface AIStore {
   builderState: BuilderState;
   pendingRoutine: AIRoutineJSON | null;
   streamingText: string;
   errorMessage: string | null;
-  generate: (prompt: string, exercises: Exercise[], userContext?: RoutineUserContext) => Promise<void>;
+  generate: (prompt: string, exercises: Exercise[], userContext?: RoutineUserContext, importMode?: boolean) => Promise<void>;
   clearBuilder: () => void;
+  setBuilderState: (state: BuilderState) => void;
+  setStreamingText: (text: string) => void;
 }
 
 export const useAIStore = create<AIStore>((set) => ({
@@ -20,12 +22,12 @@ export const useAIStore = create<AIStore>((set) => ({
   streamingText: '',
   errorMessage: null,
 
-  generate: async (prompt, exercises, userContext) => {
+  generate: async (prompt, exercises, userContext, importMode = false) => {
     set({ builderState: 'loading', streamingText: '', errorMessage: null, pendingRoutine: null });
     try {
       const routine = await generateRoutine(prompt, exercises, (text) => {
         set({ streamingText: text });
-      }, userContext);
+      }, userContext, importMode);
       set({ builderState: 'preview', pendingRoutine: routine, streamingText: '' });
     } catch (e) {
       set({
@@ -39,4 +41,7 @@ export const useAIStore = create<AIStore>((set) => ({
   clearBuilder: () => set({
     builderState: 'idle', pendingRoutine: null, streamingText: '', errorMessage: null,
   }),
+
+  setBuilderState: (state) => set({ builderState: state }),
+  setStreamingText: (text) => set({ streamingText: text }),
 }));
