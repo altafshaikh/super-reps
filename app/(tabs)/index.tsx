@@ -27,6 +27,13 @@ function greeting(): string {
   return 'Good evening';
 }
 
+function localDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function calcWeekSessions(sessions: WorkoutSession[]): number {
   const today = new Date();
   const dow = today.getDay();
@@ -62,11 +69,11 @@ function WeekHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
   monday.setDate(today.getDate() - daysToMonday);
   monday.setHours(0, 0, 0, 0);
 
-  const sessionDates = new Set(sessions.map(s => s.started_at.slice(0, 10)));
+  const sessionDates = new Set(sessions.map(s => localDate(new Date(s.started_at))));
   const trainedCount = [...Array(7)].filter((_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    return sessionDates.has(d.toISOString().slice(0, 10));
+    return sessionDates.has(localDate(d));
   }).length;
 
   return (
@@ -79,8 +86,7 @@ function WeekHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
         {days.map((label, i) => {
           const d = new Date(monday);
           d.setDate(monday.getDate() + i);
-          const iso = d.toISOString().slice(0, 10);
-          const trained = sessionDates.has(iso);
+          const trained = sessionDates.has(localDate(d));
           const isToday = d.toDateString() === today.toDateString();
           const isFuture = d > today;
           return (
@@ -232,13 +238,13 @@ export default function HomeScreen() {
     for (let i = 0; i <= daysToMon; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      weekRange.push(d.toISOString().slice(0, 10));
+      weekRange.push(localDate(d));
     }
 
     const weekDaysTrained = [...new Set(
       sessions
-        .filter(s => weekRange.includes(s.started_at.slice(0, 10)))
-        .map(s => s.started_at.slice(0, 10))
+        .filter(s => weekRange.includes(localDate(new Date(s.started_at))))
+        .map(s => localDate(new Date(s.started_at)))
     )];
 
     // Scheduled days across all routines
@@ -279,7 +285,8 @@ export default function HomeScreen() {
       weekDaysScheduled,
     };
 
-    // Silently upgrade to LLM message in the background — no spinner shown
+    // Silently upgrade to LLM message — skip if trained today (instant label is already correct)
+    if (daysSince === 0) return;
     getReadinessMessage(ctx)
       .then(res => setReadiness({ label: res.label, color: TONE_COLOR[res.color] ?? COLORS.blue }))
       .catch(() => { /* keep the instant fallback */ });

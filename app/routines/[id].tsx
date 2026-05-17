@@ -131,7 +131,7 @@ export default function RoutineDetailScreen() {
     <View style={s.root}>
       {/* ── Nav header ── */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/routines')} style={s.iconBtn}>
           <Ionicons name="arrow-back" size={20} color={COLORS.ink2} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>Routine</Text>

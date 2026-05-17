@@ -275,7 +275,7 @@ export default function EditRoutineScreen() {
 
       {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/routines')}>
           <Text style={s.cancelTxt}>Cancel</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Edit Routine</Text>
