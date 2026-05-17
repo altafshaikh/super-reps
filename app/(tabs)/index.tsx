@@ -139,6 +139,7 @@ export default function HomeScreen() {
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [todayRoutineId, setTodayRoutineId] = useState<string | null>(null);
+  const [hasSchedule, setHasSchedule]       = useState(false);
   const [loading, setLoading] = useState(true);
   const [readiness, setReadiness] = useState<{ label: string; color: string }>({
     label: '',
@@ -151,7 +152,7 @@ export default function HomeScreen() {
     if (!user) return;
     setLoading(true);
     const todayWd = new Date().getDay();
-    const [sessionsRes, prFlat, routinesRes, scheduleRes] = await Promise.all([
+    const [sessionsRes, prFlat, routinesRes, scheduleRes, scheduleCountRes] = await Promise.all([
       supabase
         .from('workout_sessions')
         .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at')
@@ -173,6 +174,10 @@ export default function HomeScreen() {
         .eq('user_id', user.id)
         .eq('weekday', todayWd)
         .maybeSingle(),
+      supabase
+        .from('weekly_schedule')
+        .select('weekday', { count: 'exact', head: true })
+        .eq('user_id', user.id),
     ]);
 
     if (sessionsRes.data) setSessions(sessionsRes.data as WorkoutSession[]);
@@ -180,6 +185,7 @@ export default function HomeScreen() {
     setPersonalBests(bests);
     if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
     setTodayRoutineId((scheduleRes.data as any)?.routine_id ?? null);
+    setHasSchedule((scheduleCountRes.count ?? 0) > 0);
     setLoading(false);
   }, [user]);
 
@@ -298,7 +304,22 @@ export default function HomeScreen() {
     return null;
   }, [todayRoutineId, routines]);
 
-  const isRestDay = routines.length > 0 && !loading && todayRoutineId === null;
+  const todaySession = useMemo(() =>
+    sessions.find(s => localDate(new Date(s.started_at)) === localDate(new Date())) ?? null,
+  [sessions]);
+  const trainedToday = todaySession !== null;
+  const [todaySetsCount, setTodaySetsCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!todaySession) return;
+    supabase
+      .from('workout_sets')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', todaySession.id)
+      .then(({ count }) => setTodaySetsCount(count ?? 0));
+  }, [todaySession?.id]);
+  // Only show REST DAY if: user has a schedule configured, today is not a training day, and hasn't trained today
+  const isRestDay = !loading && hasSchedule && todayRoutineId === null && !trainedToday;
   const routineDay = useMemo(() => currentRoutine?.days?.find(d => (d.exercises?.length ?? 0) > 0) ?? null, [currentRoutine]);
   const dayExercises = routineDay?.exercises ?? [];
   const previewExercises = dayExercises.slice(0, 3);
@@ -404,7 +425,55 @@ export default function HomeScreen() {
         )}
 
         {/* Routine / start card */}
-        {!isActive && !isRestDay && (
+        {/* Completed workout card */}
+        {!isActive && trainedToday && todaySession && (
+          <SRCard style={s.doneCard}>
+            <View style={s.doneHeader}>
+              <View style={s.doneBadge}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.doneLabel}>WORKOUT COMPLETE</Text>
+                <Text style={s.doneName} numberOfLines={1}>
+                  {todaySession.routine_name ?? 'Free Workout'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/workouts')}>
+                <Text style={s.doneSeeAll}>Details →</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.doneStats}>
+              <View style={s.doneStat}>
+                <Ionicons name="time-outline" size={18} color={COLORS.green} />
+                <Text style={s.doneStatVal}>
+                  {todaySession.duration_seconds
+                    ? `${Math.round(todaySession.duration_seconds / 60)} min`
+                    : '–'}
+                </Text>
+                <Text style={s.doneStatLab}>Duration</Text>
+              </View>
+              <View style={s.doneStatDivider} />
+              <View style={s.doneStat}>
+                <Ionicons name="barbell-outline" size={18} color={COLORS.green} />
+                <Text style={s.doneStatVal}>
+                  {todaySession.volume_total
+                    ? `${Number(todaySession.volume_total).toLocaleString()} kg`
+                    : '–'}
+                </Text>
+                <Text style={s.doneStatLab}>Volume</Text>
+              </View>
+              <View style={s.doneStatDivider} />
+              <View style={s.doneStat}>
+                <Ionicons name="layers-outline" size={18} color={COLORS.green} />
+                <Text style={s.doneStatVal}>{todaySetsCount}</Text>
+                <Text style={s.doneStatLab}>Total sets</Text>
+              </View>
+            </View>
+          </SRCard>
+        )}
+
+        {!isActive && !isRestDay && !trainedToday && (
           <SRCard style={s.routineCard}>
             <View style={s.routineHeader}>
               <Text style={s.routineLabel}>
@@ -519,6 +588,25 @@ const s = StyleSheet.create({
   coachMessage: { fontSize: 14, fontWeight: '500', color: COLORS.ink, lineHeight: 22 },
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   typingText: { fontSize: 13, color: COLORS.ink3, fontStyle: 'italic' },
+
+  // Completed workout card
+  doneCard:        { padding: 16, gap: 14, borderColor: `${COLORS.green}30`, borderWidth: 1 },
+  doneHeader:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  doneBadge:       {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center',
+  },
+  doneLabel:       { fontSize: 10, fontWeight: '800', color: COLORS.green, letterSpacing: 1 },
+  doneName:        { fontSize: 17, fontWeight: '800', color: COLORS.ink, marginTop: 1 },
+  doneSeeAll:      { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+  doneStats:       {
+    flexDirection: 'row', backgroundColor: COLORS.surface2,
+    borderRadius: 12, paddingVertical: 16,
+  },
+  doneStat:        { flex: 1, alignItems: 'center', gap: 4 },
+  doneStatVal:     { fontSize: 16, fontWeight: '800', color: COLORS.ink },
+  doneStatLab:     { fontSize: 11, color: COLORS.ink3, fontWeight: '600' },
+  doneStatDivider: { width: StyleSheet.hairlineWidth, backgroundColor: COLORS.surface3 },
 
   restDayCard: { padding: 20, gap: 8, borderColor: `${COLORS.amber}30`, borderWidth: 1 },
   restDayLabel: { fontSize: 10, color: COLORS.amber, fontWeight: '800', letterSpacing: 1 },

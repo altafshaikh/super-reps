@@ -19,6 +19,14 @@ function decodeParam(s: string | undefined, fallback = ''): string {
   try { return decodeURIComponent(s); } catch { return s; }
 }
 
+function timeOfDayWorkoutName(): string {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'Morning Workout 💪';
+  if (h >= 12 && h < 17) return 'Afternoon Workout 💪';
+  if (h >= 17 && h < 21) return 'Evening Workout 💪';
+  return 'Night Workout 💪';
+}
+
 function formatWhen(date: Date): string {
   return date.toLocaleString('en-US', {
     day: 'numeric', month: 'long', year: 'numeric',
@@ -44,7 +52,7 @@ export default function WorkoutCompleteScreen() {
   } = useWorkoutStore();
   const { user } = useUserStore();
 
-  const routineName = decodeParam(params.routineName, storeRoutineName ?? 'Workout');
+  const routineName = decodeParam(params.routineName, storeRoutineName ?? timeOfDayWorkoutName());
   const durationSec = Number(params.durationSec) || 0;
   const setCount = Number(params.setCount) || 0;
   const volumeKg = Number(params.volumeKg) || 0;

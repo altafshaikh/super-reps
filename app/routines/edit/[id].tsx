@@ -149,9 +149,15 @@ export default function EditRoutineScreen() {
         .eq('id', id)
         .single();
 
+      // Load scheduled days from weekly_schedule (source of truth)
+      const { data: scheduleRows } = await supabase
+        .from('weekly_schedule')
+        .select('weekday')
+        .eq('routine_id', id);
+      if (scheduleRows) setScheduledDays(scheduleRows.map((r: any) => r.weekday));
+
       if (data) {
         setName(data.name ?? '');
-        setScheduledDays(Array.isArray(data.scheduled_days) ? data.scheduled_days : []);
         const all: EditableExercise[] = [];
         for (const day of data.days ?? []) {
           for (const re of day.exercises ?? []) {
@@ -244,8 +250,12 @@ export default function EditRoutineScreen() {
     const active  = exercises.filter(ex => !ex.removed);
     const removed = exercises.filter(ex => ex.removed);
 
+    const { data: { user } } = await supabase.auth.getUser();
+
     await Promise.all([
-      supabase.from('routines').update({ name: name.trim(), scheduled_days: scheduledDays }).eq('id', id),
+      // Update routine name
+      supabase.from('routines').update({ name: name.trim() }).eq('id', id),
+      // Update exercises
       ...active.map(ex => supabase.from('routine_exercises').update({
         notes:        ex.notes.trim() || null,
         rest_seconds: ex.rest_seconds,
@@ -260,6 +270,20 @@ export default function EditRoutineScreen() {
       }).eq('id', ex.id)),
       ...removed.map(ex => supabase.from('routine_exercises').delete().eq('id', ex.id)),
     ]);
+
+    // Sync weekly_schedule: remove old entries for this routine, insert new ones
+    if (user) {
+      await supabase.from('weekly_schedule').delete()
+        .eq('user_id', user.id)
+        .eq('routine_id', id);
+
+      if (scheduledDays.length > 0) {
+        await supabase.from('weekly_schedule').upsert(
+          scheduledDays.map(weekday => ({ user_id: user.id, weekday, routine_id: id })),
+          { onConflict: 'user_id,weekday' }
+        );
+      }
+    }
 
     setSaving(false);
     router.back();
