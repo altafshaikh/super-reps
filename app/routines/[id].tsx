@@ -85,8 +85,15 @@ export default function RoutineDetailScreen() {
               key={day.id}
               className="bg-brand-600 rounded-xl p-4 flex-row items-center justify-between"
               onPress={() => {
-                const exercises = day.exercises?.map(re => re.exercise) ?? [];
-                startWorkout(routine.id, `${routine.name} — ${day.name}`, exercises);
+                const inputs = (day.exercises ?? [])
+                  .filter((re: any) => re.exercise)
+                  .map((re: any) => ({
+                    exercise: re.exercise,
+                    setsCount: re.sets ?? 3,
+                    defaultReps: re.rep_range ? parseInt(re.rep_range.match(/(\d+)/)?.[1] ?? '0', 10) : 0,
+                    restSeconds: re.rest_seconds ?? 90,
+                  }));
+                startWorkout(routine.id, `${routine.name} — ${day.name}`, inputs);
                 router.push('/workout/active');
               }}
             >

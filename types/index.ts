@@ -29,6 +29,7 @@ export interface Exercise {
   name: string;
   slug: string;
   category: string;
+  exercise_type?: string | null;
   muscle_groups: MuscleGroup[];
   equipment: string[];
   instructions: string;
@@ -143,10 +144,20 @@ export interface ActiveSet {
   weight_kg: number;
   reps: number;
   rpe: number | null;
+  duration_seconds: number | null;
   completed: boolean;
 }
 
 export interface ActiveExercise {
   exercise: Exercise;
   sets: ActiveSet[];
+  notes: string;
+  restSeconds: number;
+}
+
+export interface WorkoutExerciseInput {
+  exercise: Exercise;
+  setsCount?: number;
+  defaultReps?: number;
+  restSeconds?: number;
 }

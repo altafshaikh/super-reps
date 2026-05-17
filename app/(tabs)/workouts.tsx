@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
-import type { Routine, Exercise } from '@/types';
+import type { Routine, Exercise, WorkoutExerciseInput } from '@/types';
 import { COLORS } from '@/constants';
 import { ExerciseLibraryModal } from '@/components/workouts/ExerciseLibraryModal';
 
@@ -54,6 +54,12 @@ function firstWorkoutDay(routine: Routine) {
   return routine.days?.find(d => (d.exercises?.length ?? 0) > 0);
 }
 
+function parseRepRange(range: string | undefined | null): number {
+  if (!range) return 0;
+  const match = range.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
 export default function WorkoutsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -96,13 +102,20 @@ export default function WorkoutsScreen() {
 
   const handleStartRoutine = (routine: Routine) => {
     const day = firstWorkoutDay(routine);
-    const exercises: Exercise[] = day?.exercises?.map(re => re.exercise as Exercise).filter(Boolean) ?? [];
-    startWorkout(routine.id, routine.name, exercises);
+    const inputs: WorkoutExerciseInput[] = (day?.exercises ?? [])
+      .filter(re => re.exercise)
+      .map(re => ({
+        exercise: re.exercise as Exercise,
+        setsCount: re.sets ?? 3,
+        defaultReps: parseRepRange(re.rep_range),
+        restSeconds: re.rest_seconds ?? 90,
+      }));
+    startWorkout(routine.id, routine.name, inputs);
     router.push('/workout/active');
   };
 
   const handleAddFromLibrary = (exercise: Exercise) => {
-    startWorkout(undefined, 'Quick workout', [exercise]);
+    startWorkout(undefined, 'Quick workout', [{ exercise }]);
     setLibraryOpen(false);
     router.push('/workout/active');
   };

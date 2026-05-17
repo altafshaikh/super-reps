@@ -11,6 +11,7 @@ import { useUserStore } from '@/stores/userStore';
 import { formatWeight } from '@/lib/utils';
 import { generateId } from '@/lib/utils';
 import { COLORS } from '@/constants';
+import { ExerciseLibraryModal } from '@/components/workouts/ExerciseLibraryModal';
 import type { Exercise } from '@/types';
 
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
@@ -46,8 +47,6 @@ export default function EditWorkoutScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const [allExercises, setAllExercises] = useState<Exercise[]>([]);
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!user || !sessionId) return;
@@ -136,16 +135,6 @@ export default function EditWorkoutScreen() {
     setExercises(prev => prev.map(ex => ex.exercise_id === exId ? { ...ex, deleted: true } : ex));
   };
 
-  const fetchExercises = useCallback(async (q: string) => {
-    const query = supabase.from('exercises').select('*').limit(40);
-    if (q) query.ilike('name', `%${q}%`);
-    const { data } = await query;
-    setAllExercises((data ?? []) as Exercise[]);
-  }, []);
-
-  useEffect(() => {
-    if (showPicker) fetchExercises('');
-  }, [showPicker]);
 
   const addExercise = (exercise: Exercise) => {
     const already = exercises.find(ex => ex.exercise_id === exercise.id);
@@ -165,7 +154,6 @@ export default function EditWorkoutScreen() {
       }]);
     }
     setShowPicker(false);
-    setSearch('');
   };
 
   const handleSave = async () => {
@@ -296,39 +284,11 @@ export default function EditWorkoutScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      <Modal visible={showPicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.pickerRoot}>
-          <View style={s.pickerHeader}>
-            <Text style={s.pickerTitle}>Add Exercise</Text>
-            <TouchableOpacity onPress={() => setShowPicker(false)}>
-              <Ionicons name="close" size={24} color={COLORS.ink3} />
-            </TouchableOpacity>
-          </View>
-          <View style={s.pickerSearch}>
-            <TextInput
-              style={s.pickerInput}
-              placeholder="Search exercises…"
-              placeholderTextColor={COLORS.ink3}
-              value={search}
-              onChangeText={q => { setSearch(q); fetchExercises(q); }}
-            />
-          </View>
-          <FlatList
-            data={allExercises}
-            keyExtractor={e => e.id}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={s.pickerRow} onPress={() => addExercise(item)}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.pickerExName}>{item.name}</Text>
-                  <Text style={s.pickerExMeta}>{item.category} · {item.muscle_groups?.join(', ')}</Text>
-                </View>
-                <Ionicons name="add-circle-outline" size={22} color={COLORS.blue} />
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      </Modal>
+      <ExerciseLibraryModal
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onAddExercise={addExercise}
+      />
     </View>
   );
 }

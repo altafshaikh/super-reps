@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import type { ActiveExercise, ActiveSet, Exercise, SetType } from '@/types';
+import type { ActiveExercise, ActiveSet, Exercise, SetType, WorkoutExerciseInput } from '@/types';
 import { generateId } from '@/lib/utils';
 import { generateCoachingQueue } from '@/lib/workout-coaching';
 import type { UserProfile, RecentSessionSummary } from '@/lib/workout-coaching';
 
 interface WorkoutStore {
-  // Active session
   sessionId: string | null;
   routineId: string | null;
   routineName: string | null;
@@ -13,46 +12,51 @@ interface WorkoutStore {
   exercises: ActiveExercise[];
   isActive: boolean;
 
-  // Rest timer
   restSeconds: number;
   restRemaining: number;
   restActive: boolean;
 
-  // Coach
   coachText: Record<string, string>;
   coachingQueue: string[];
   coachingQueueIndex: number;
 
-  // Actions
+  prCache: Record<string, number>;
+
   startWorkout: (
     routineId?: string,
     routineName?: string,
-    exercises?: Exercise[],
+    exercises?: WorkoutExerciseInput[],
     userProfile?: UserProfile,
     recentSessions?: RecentSessionSummary[],
   ) => void;
   addExercise: (exercise: Exercise) => void;
   removeExercise: (exerciseId: string) => void;
+  reorderExercises: (fromIndex: number, toIndex: number) => void;
+  replaceExercise: (oldExerciseId: string, newExercise: Exercise) => void;
+  updateExerciseNotes: (exerciseId: string, notes: string) => void;
   addSet: (exerciseId: string) => void;
   updateSet: (exerciseId: string, setId: string, updates: Partial<ActiveSet>) => void;
   completeSet: (exerciseId: string, setId: string) => void;
   removeSet: (exerciseId: string, setId: string) => void;
   startRest: (seconds: number) => void;
+  adjustRest: (delta: number) => void;
   tickRest: () => void;
   skipRest: () => void;
   setCoachText: (exerciseId: string, text: string) => void;
   nextCoachMessage: () => string | null;
+  setPrCache: (cache: Record<string, number>) => void;
   finishWorkout: () => { exercises: ActiveExercise[]; startedAt: Date; sessionId: string };
   resetWorkout: () => void;
 }
 
-const defaultSet = (index: number): ActiveSet => ({
+const defaultSet = (index: number, defaultReps = 0): ActiveSet => ({
   id: generateId(),
   set_index: index,
   set_type: 'working',
   weight_kg: 0,
-  reps: 0,
+  reps: defaultReps,
   rpe: null,
+  duration_seconds: null,
   completed: false,
 });
 
@@ -69,6 +73,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   coachText: {},
   coachingQueue: [],
   coachingQueueIndex: 0,
+  prCache: {},
 
   startWorkout: (routineId, routineName, exercises = [], userProfile, recentSessions) => {
     set({
@@ -76,31 +81,42 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       routineId: routineId ?? null,
       routineName: routineName ?? null,
       startedAt: new Date(),
-      exercises: exercises.map(e => ({
-        exercise: e,
-        sets: [defaultSet(0)],
-      })),
+      exercises: exercises.map(input => {
+        const setsCount = Math.max(1, input.setsCount ?? 1);
+        const sets = Array.from({ length: setsCount }, (_, i) =>
+          defaultSet(i, input.defaultReps ?? 0)
+        );
+        return {
+          exercise: input.exercise,
+          sets,
+          notes: '',
+          restSeconds: input.restSeconds ?? 90,
+        };
+      }),
       isActive: true,
       coachText: {},
       coachingQueue: [],
       coachingQueueIndex: 0,
+      prCache: {},
     });
 
-    // Generate coaching queue silently in background
     generateCoachingQueue(
       routineName ?? null,
       userProfile ?? {},
       recentSessions ?? [],
     ).then(queue => {
       set({ coachingQueue: queue, coachingQueueIndex: 0 });
-    }).catch(() => {
-      // Silently fail — workout continues with empty queue
-    });
+    }).catch(() => {});
   },
 
   addExercise: (exercise) => {
     set(s => ({
-      exercises: [...s.exercises, { exercise, sets: [defaultSet(0)] }],
+      exercises: [...s.exercises, {
+        exercise,
+        sets: [defaultSet(0)],
+        notes: '',
+        restSeconds: 90,
+      }],
     }));
   },
 
@@ -110,11 +126,44 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     }));
   },
 
+  reorderExercises: (fromIndex, toIndex) => {
+    set(s => {
+      const exs = [...s.exercises];
+      const [moved] = exs.splice(fromIndex, 1);
+      exs.splice(toIndex, 0, moved);
+      return { exercises: exs };
+    });
+  },
+
+  replaceExercise: (oldExerciseId, newExercise) => {
+    set(s => ({
+      exercises: s.exercises.map(e => {
+        if (e.exercise.id !== oldExerciseId) return e;
+        return {
+          ...e,
+          exercise: newExercise,
+          sets: e.sets.filter(s => s.completed),
+        };
+      }),
+    }));
+  },
+
+  updateExerciseNotes: (exerciseId, notes) => {
+    set(s => ({
+      exercises: s.exercises.map(e =>
+        e.exercise.id === exerciseId ? { ...e, notes } : e
+      ),
+    }));
+  },
+
   addSet: (exerciseId) => {
     set(s => ({
       exercises: s.exercises.map(e => {
         if (e.exercise.id !== exerciseId) return e;
-        return { ...e, sets: [...e.sets, defaultSet(e.sets.length)] };
+        const lastCompleted = [...e.sets].reverse().find(s => s.completed);
+        const newSet = defaultSet(e.sets.length, lastCompleted?.reps ?? 0);
+        if (lastCompleted) newSet.weight_kg = lastCompleted.weight_kg;
+        return { ...e, sets: [...e.sets, newSet] };
       }),
     }));
   },
@@ -156,6 +205,14 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     set({ restSeconds: seconds, restRemaining: seconds, restActive: true });
   },
 
+  adjustRest: (delta) => {
+    set(s => {
+      const newRemaining = Math.max(0, s.restRemaining + delta);
+      if (newRemaining === 0) return { restRemaining: 0, restActive: false };
+      return { restRemaining: newRemaining };
+    });
+  },
+
   tickRest: () => {
     set(s => {
       if (s.restRemaining <= 1) return { restRemaining: 0, restActive: false };
@@ -177,6 +234,8 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     return msg ?? null;
   },
 
+  setPrCache: (cache) => set({ prCache: cache }),
+
   finishWorkout: () => {
     const { exercises, startedAt, sessionId } = get();
     return { exercises, startedAt: startedAt!, sessionId: sessionId! };
@@ -187,7 +246,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       sessionId: null, routineId: null, routineName: null,
       startedAt: null, exercises: [], isActive: false,
       restRemaining: 0, restActive: false, coachText: {},
-      coachingQueue: [], coachingQueueIndex: 0,
+      coachingQueue: [], coachingQueueIndex: 0, prCache: {},
     });
   },
 }));

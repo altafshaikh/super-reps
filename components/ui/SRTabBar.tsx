@@ -10,8 +10,8 @@ import { useReduceMotion } from '@/context/MotionContext';
 
 const SCREEN_W = Dimensions.get('window').width;
 const TAB_BAR_H_PAD = 6;
-const PILL_W = 60;
-const PILL_H = 40;
+const PILL_W = 64;
+const PILL_H = 48;
 const SPRING = { mass: 0.3, damping: 20, stiffness: 200 };
 const PILL_COLOR = 'rgba(96,165,250,0.12)';
 

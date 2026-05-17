@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
-import type { PersonalRecord, WorkoutSession, Routine, Exercise } from '@/types';
+import type { PersonalRecord, WorkoutSession, Routine, Exercise, WorkoutExerciseInput } from '@/types';
 import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
 import { formatWeight } from '@/lib/utils';
 import { COLORS } from '@/constants';
@@ -126,6 +126,20 @@ function WeekHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
 
 // ── Main screen ───────────────────────────────────────────────
 
+function parseRepRange(range: string | undefined | null): number {
+  if (!range) return 0;
+  const match = range.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+// REST_DAY_MESSAGES shown when no routine is scheduled today
+const REST_DAY_MESSAGES = [
+  "Today's a rest day — your muscles grow while you recover. 💤",
+  "Rest day. Prioritize sleep, walk, and hydrate. Recovery is the work. 🌊",
+  "Active recovery day — light movement, stretching, and good nutrition go a long way. 🧘",
+  "Your body is rebuilding right now. Trust the process and rest well. ✨",
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -134,13 +148,13 @@ export default function HomeScreen() {
 
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
-  const [firstRoutine, setFirstRoutine] = useState<Routine | null>(null);
+  const [routines, setRoutines] = useState<Routine[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [sessionsRes, prFlat, routineRes] = await Promise.all([
+    const [sessionsRes, prFlat, routinesRes] = await Promise.all([
       supabase
         .from('workout_sessions')
         .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at')
@@ -152,17 +166,16 @@ export default function HomeScreen() {
       fetchAllSetsForPersonalBests(supabase, user.id),
       supabase
         .from('routines')
-        .select(`id, name, days:routine_days(id, name, exercises:routine_exercises(*, exercise:exercises(*)))`)
+        .select(`id, name, days:routine_days(id, name, day_index, weekday, exercises:routine_exercises(*, exercise:exercises(*)))`)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .single(),
+        .limit(10),
     ]);
 
     if (sessionsRes.data) setSessions(sessionsRes.data as WorkoutSession[]);
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
-    if (routineRes.data) setFirstRoutine(routineRes.data as unknown as Routine);
+    if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
     setLoading(false);
   }, [user]);
 
@@ -174,21 +187,28 @@ export default function HomeScreen() {
   const readiness = useMemo(() => readinessAssessment(sessions), [sessions]);
   const top3PRs = useMemo(() => personalBests.slice(0, 3), [personalBests]);
 
-  const handleStartRoutine = () => {
-    if (!firstRoutine) {
-      startWorkout();
-      router.push('/workout/active');
-      return;
+  // Find today's scheduled routine day (matches weekday column if set, else fall back to first routine)
+  const todayWeekday = new Date().getDay(); // 0=Sun
+  const todayRoutineDay = useMemo(() => {
+    for (const routine of routines) {
+      for (const day of (routine.days ?? [])) {
+        if ((day as any).weekday === todayWeekday && (day.exercises?.length ?? 0) > 0) {
+          return { routine, day };
+        }
+      }
     }
-    const day = firstRoutine.days?.find(d => (d.exercises?.length ?? 0) > 0);
-    const exercises: Exercise[] = day?.exercises?.map(re => re.exercise as Exercise).filter(Boolean) ?? [];
-    startWorkout(firstRoutine.id, firstRoutine.name, exercises);
-    router.push('/workout/active');
-  };
+    return null;
+  }, [routines, todayWeekday]);
 
-  const routineDay = firstRoutine
-    ? (firstRoutine.days ?? []).find(d => (d.exercises?.length ?? 0) > 0) ?? null
-    : null;
+  const isRestDay = routines.length > 0 && todayRoutineDay === null;
+  const activeEntry = todayRoutineDay ?? (routines.length > 0 ? (() => {
+    const r = routines[0];
+    const d = r.days?.find(d => (d.exercises?.length ?? 0) > 0) ?? null;
+    return d ? { routine: r, day: d } : null;
+  })() : null);
+
+  const routineDay = activeEntry?.day ?? null;
+  const currentRoutine = activeEntry?.routine ?? null;
   const dayExercises = routineDay?.exercises ?? [];
   const previewExercises = dayExercises.slice(0, 3);
   const extraCount = Math.max(0, dayExercises.length - 3);
@@ -197,14 +217,34 @@ export default function HomeScreen() {
     const groups = new Set<string>();
     dayExercises.forEach(re => re.exercise?.muscle_groups?.forEach(mg => groups.add(mg)));
     return Array.from(groups).slice(0, 4);
-  }, [firstRoutine]);
+  }, [routineDay]);
 
   const estimatedMinutes = useMemo(() => {
     if (!dayExercises.length) return 0;
     const totalSets = dayExercises.reduce((n, re) => n + (re.sets ?? 0), 0);
     const avgRest = dayExercises.reduce((sum, re) => sum + (re.rest_seconds ?? 90), 0) / dayExercises.length;
     return Math.round(totalSets * (avgRest + 30) / 60);
-  }, [firstRoutine]);
+  }, [routineDay]);
+
+  const restDayMessage = useMemo(() => REST_DAY_MESSAGES[todayWeekday % REST_DAY_MESSAGES.length], [todayWeekday]);
+
+  const handleStartRoutine = () => {
+    if (!currentRoutine || !routineDay) {
+      startWorkout();
+      router.push('/workout/active');
+      return;
+    }
+    const inputs: WorkoutExerciseInput[] = (routineDay.exercises ?? [])
+      .filter(re => re.exercise)
+      .map(re => ({
+        exercise: re.exercise as Exercise,
+        setsCount: re.sets ?? 3,
+        defaultReps: parseRepRange(re.rep_range),
+        restSeconds: re.rest_seconds ?? 90,
+      }));
+    startWorkout(currentRoutine.id, currentRoutine.name, inputs);
+    router.push('/workout/active');
+  };
 
   if (loading) {
     return (
@@ -250,11 +290,22 @@ export default function HomeScreen() {
           </View>
         </SRCard>
 
+        {/* Rest day card */}
+        {!isActive && isRestDay && (
+          <SRCard style={s.restDayCard}>
+            <Text style={s.restDayLabel}>REST DAY</Text>
+            <Text style={s.restDayTitle}>Recovery is progress</Text>
+            <Text style={s.restDayMsg}>{restDayMessage}</Text>
+          </SRCard>
+        )}
+
         {/* Routine / start card */}
-        {!isActive && (
+        {!isActive && !isRestDay && (
           <SRCard style={s.routineCard}>
             <View style={s.routineHeader}>
-              <Text style={s.routineLabel}>{firstRoutine ? "TODAY'S PLAN" : 'START TRAINING'}</Text>
+              <Text style={s.routineLabel}>
+                {todayRoutineDay ? "TODAY'S PLAN" : currentRoutine ? 'YOUR ROUTINE' : 'START TRAINING'}
+              </Text>
               {estimatedMinutes > 0 && (
                 <View style={s.durationBadge}>
                   <Text style={s.durationText}>~{estimatedMinutes} min</Text>
@@ -263,7 +314,7 @@ export default function HomeScreen() {
             </View>
 
             <Text style={s.routineName} numberOfLines={1}>
-              {firstRoutine?.name ?? 'Empty Workout'}
+              {currentRoutine ? `${currentRoutine.name}${routineDay?.name ? ` · ${routineDay.name}` : ''}` : 'Empty Workout'}
             </Text>
 
             {muscleTags.length > 0 && (
@@ -291,7 +342,9 @@ export default function HomeScreen() {
             )}
 
             <TouchableOpacity style={s.startBtn} onPress={handleStartRoutine} activeOpacity={0.85}>
-              <Text style={s.startBtnTxt}>Start Workout →</Text>
+              <Text style={s.startBtnTxt}>
+                {currentRoutine ? `Start ${routineDay?.name ?? currentRoutine.name} →` : 'Start Workout →'}
+              </Text>
             </TouchableOpacity>
           </SRCard>
         )}
@@ -347,6 +400,11 @@ const s = StyleSheet.create({
   streakRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 10 },
   streakVal: { fontSize: 22, fontWeight: '900', color: COLORS.ink },
   streakLab: { fontSize: 12, color: COLORS.ink3 },
+
+  restDayCard: { padding: 20, gap: 8, borderColor: `${COLORS.amber}30`, borderWidth: 1 },
+  restDayLabel: { fontSize: 10, color: COLORS.amber, fontWeight: '800', letterSpacing: 1 },
+  restDayTitle: { fontSize: 22, fontWeight: '900', color: COLORS.ink },
+  restDayMsg: { fontSize: 14, color: COLORS.ink2, lineHeight: 20 },
 
   routineCard: { padding: 16, gap: 10 },
   routineHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
