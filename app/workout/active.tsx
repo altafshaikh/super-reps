@@ -27,7 +27,7 @@ import { SRBottomSheet } from '@/components/ui';
 import { ExerciseLibraryModal } from '@/components/workouts/ExerciseLibraryModal';
 import type { Exercise, ActiveSet } from '@/types';
 
-const GREEN_ROW = '#1A5C3A';
+const GREEN_ROW = '#1B6B40';
 const BLUE_ACCENT = '#0070FF';
 
 function getExerciseDisplayType(exercise: Exercise): 'weight_reps' | 'bodyweight_reps' | 'duration' {
@@ -318,7 +318,7 @@ function InlineSetRow({
         <Text style={[s.setNum, set.completed && s.setNumDone]}>{index + 1}</Text>
 
         {/* PREVIOUS column */}
-        <Text style={s.prevCol} numberOfLines={1}>{prevDisplay}</Text>
+        <Text style={[s.prevCol, set.completed && s.prevColDone]} numberOfLines={1}>{prevDisplay}</Text>
 
         {/* Input columns by display type */}
         {displayType === 'weight_reps' && (
@@ -396,7 +396,7 @@ export default function ActiveWorkoutScreen() {
     startRest, adjustRest, tickRest, skipRest,
     restRemaining, restActive, restSeconds,
     coachText, setCoachText, nextCoachMessage,
-    finishWorkout, resetWorkout, prCache, setPrCache,
+    finishWorkout, resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache,
   } = useWorkoutStore();
   const { user } = useUserStore();
 
@@ -419,6 +419,10 @@ export default function ActiveWorkoutScreen() {
   const prefilledSets = useRef(new Set<string>());
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    expandWorkout();
+  }, []);
 
   useEffect(() => {
     elapsedRef.current = setInterval(() => {
@@ -643,7 +647,14 @@ export default function ActiveWorkoutScreen() {
 
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 12 }]}>
-        <View style={{ flex: 1, marginRight: 8 }}>
+        <TouchableOpacity
+          style={s.minimizeBtn}
+          onPress={() => { minimizeWorkout(); router.back(); }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-down" size={22} color={COLORS.ink2} />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginHorizontal: 8 }}>
           <Text style={s.routineName} numberOfLines={1}>
             {routineName ?? 'Quick Workout'}
           </Text>
@@ -909,9 +920,10 @@ const s = StyleSheet.create({
 
   // Header
   header: {
-    paddingHorizontal: 20, paddingBottom: 12,
+    paddingHorizontal: 16, paddingBottom: 12,
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
   },
+  minimizeBtn: { paddingTop: 2, paddingRight: 4 },
   routineName: { color: COLORS.ink, fontWeight: '700', fontSize: 16 },
   elapsed: { color: COLORS.primary, fontWeight: '700', fontSize: 26, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -954,7 +966,7 @@ const s = StyleSheet.create({
   exerciseBlock: { marginBottom: 20 },
   exHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   exName: { color: BLUE_ACCENT, fontWeight: '700', fontSize: 16 },
-  exCategory: { color: COLORS.textDim, fontSize: 12, marginTop: 1 },
+  exCategory: { color: COLORS.ink3, fontSize: 12, marginTop: 1 },
   exActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
 
   restLabel: { color: COLORS.primary, fontSize: 11, marginBottom: 6 },
@@ -982,17 +994,18 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8,
     borderBottomWidth: 0.5, borderBottomColor: COLORS.border,
   },
-  colHdr: { color: COLORS.textDim, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  colHdr: { color: COLORS.ink3, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   colHdrPrev: { flex: 1, textAlign: 'center' },
   colHdrInput: { width: 56, textAlign: 'center' },
   colHdrInputWide: { flex: 1, textAlign: 'center' },
 
   setRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
   setRowBorder: { borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
-  setNum: { color: COLORS.textDim, fontSize: 13, fontWeight: '600', width: 28, textAlign: 'center' },
-  setNumDone: { color: 'rgba(255,255,255,0.7)' },
+  setNum: { color: COLORS.ink2, fontSize: 13, fontWeight: '700', width: 28, textAlign: 'center' },
+  setNumDone: { color: '#FFFFFF' },
 
-  prevCol: { flex: 1, color: COLORS.textDim, fontSize: 12, textAlign: 'center' },
+  prevCol: { flex: 1, color: COLORS.ink3, fontSize: 12, textAlign: 'center' },
+  prevColDone: { color: 'rgba(255,255,255,0.6)' },
 
   deleteAction: {
     backgroundColor: COLORS.red, justifyContent: 'center', alignItems: 'center',
@@ -1002,25 +1015,25 @@ const s = StyleSheet.create({
 
   setInput: {
     color: COLORS.ink, fontSize: 15, fontWeight: '700',
-    backgroundColor: `${COLORS.surface3}80`, borderRadius: 8,
+    backgroundColor: COLORS.surface3, borderRadius: 8,
     paddingVertical: 6, textAlign: 'center', width: 52,
   },
   setInputWide: {
     color: COLORS.ink, fontSize: 15, fontWeight: '700',
-    backgroundColor: `${COLORS.surface3}80`, borderRadius: 8,
+    backgroundColor: COLORS.surface3, borderRadius: 8,
     paddingVertical: 6, textAlign: 'center', flex: 1,
   },
-  setInputDone: { color: 'rgba(255,255,255,0.9)' },
+  setInputDone: { backgroundColor: 'transparent', color: '#FFFFFF' },
 
   durationCell: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   durationTxt: { color: COLORS.ink, fontSize: 15, fontWeight: '700' },
 
   setCheck: {
-    width: 40, height: 40, borderRadius: 99,
+    width: 36, height: 36, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: COLORS.surface3,
+    borderWidth: 2, borderColor: COLORS.ink4,
   },
-  setCheckDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  setCheckDone: { backgroundColor: COLORS.green, borderColor: COLORS.green },
 
   addSetBtn: {
     marginTop: 8, borderWidth: 0.5, borderColor: COLORS.border,

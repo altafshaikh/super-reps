@@ -11,6 +11,7 @@ interface WorkoutStore {
   startedAt: Date | null;
   exercises: ActiveExercise[];
   isActive: boolean;
+  isMinimized: boolean;
 
   restSeconds: number;
   restRemaining: number;
@@ -44,6 +45,8 @@ interface WorkoutStore {
   skipRest: () => void;
   setCoachText: (exerciseId: string, text: string) => void;
   nextCoachMessage: () => string | null;
+  minimizeWorkout: () => void;
+  expandWorkout: () => void;
   setPrCache: (cache: Record<string, number>) => void;
   finishWorkout: () => { exercises: ActiveExercise[]; startedAt: Date; sessionId: string };
   resetWorkout: () => void;
@@ -67,6 +70,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   startedAt: null,
   exercises: [],
   isActive: false,
+  isMinimized: false,
   restSeconds: 90,
   restRemaining: 0,
   restActive: false,
@@ -234,6 +238,9 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     return msg ?? null;
   },
 
+  minimizeWorkout: () => set({ isMinimized: true }),
+  expandWorkout: () => set({ isMinimized: false }),
+
   setPrCache: (cache) => set({ prCache: cache }),
 
   finishWorkout: () => {
@@ -244,7 +251,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   resetWorkout: () => {
     set({
       sessionId: null, routineId: null, routineName: null,
-      startedAt: null, exercises: [], isActive: false,
+      startedAt: null, exercises: [], isActive: false, isMinimized: false,
       restRemaining: 0, restActive: false, coachText: {},
       coachingQueue: [], coachingQueueIndex: 0, prCache: {},
     });

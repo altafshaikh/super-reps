@@ -270,14 +270,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Active workout banner */}
-        {isActive && (
-          <TouchableOpacity onPress={() => router.push('/workout/active')} style={s.activeBanner}>
-            <View style={s.activeDot} />
-            <Text style={s.activeBannerText}>Workout in progress — tap to continue</Text>
-          </TouchableOpacity>
-        )}
-
         {/* AI readiness card */}
         <SRCard style={s.readinessCard}>
           <View style={s.readinessRow}>
@@ -384,14 +376,6 @@ const s = StyleSheet.create({
   greetName: { fontSize: 24, fontWeight: '900', color: COLORS.ink },
   avatar: { width: 44, height: 44, borderRadius: 99, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.bg, fontSize: 20, fontWeight: '900' },
-
-  activeBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: COLORS.greenLight, borderRadius: 14,
-    padding: 14, borderWidth: 0.5, borderColor: COLORS.green,
-  },
-  activeDot: { width: 10, height: 10, borderRadius: 99, backgroundColor: COLORS.green },
-  activeBannerText: { color: COLORS.green, fontWeight: '700', fontSize: 14, flex: 1 },
 
   readinessCard: { padding: 16 },
   readinessRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },

@@ -1,12 +1,16 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Alert } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { House } from 'phosphor-react-native/src/icons/House';
 import { Barbell } from 'phosphor-react-native/src/icons/Barbell';
 import { Robot } from 'phosphor-react-native/src/icons/Robot';
 import { User } from 'phosphor-react-native/src/icons/User';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { COLORS } from '@/constants';
 import { useReduceMotion } from '@/context/MotionContext';
+import { useWorkoutStore } from '@/stores/workoutStore';
+import { formatDuration } from '@/lib/utils';
 
 const SCREEN_W = Dimensions.get('window').width;
 const TAB_BAR_H_PAD = 6;
@@ -22,12 +26,59 @@ const TABS = [
   { id: 'profile',  label: 'Profile',  Icon: User },
 ];
 
+function MinimizedWorkoutBar() {
+  const router = useRouter();
+  const { routineName, startedAt, expandWorkout, resetWorkout } = useWorkoutStore();
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (startedAt) setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [startedAt]);
+
+  const handleExpand = () => {
+    expandWorkout();
+    router.push('/workout/active');
+  };
+
+  const handleDiscard = () => {
+    Alert.alert('Discard Workout?', 'This workout will not be saved.', [
+      { text: 'Keep Going', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: resetWorkout },
+    ]);
+  };
+
+  return (
+    <View style={mStyles.bar}>
+      <TouchableOpacity style={mStyles.expandBtn} onPress={handleExpand} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons name="chevron-up" size={20} color={COLORS.ink2} />
+      </TouchableOpacity>
+      <TouchableOpacity style={mStyles.center} onPress={handleExpand} activeOpacity={0.7}>
+        <View style={mStyles.titleRow}>
+          <View style={mStyles.greenDot} />
+          <Text style={mStyles.workoutLabel}>Workout</Text>
+          <Text style={mStyles.elapsed}>{formatDuration(elapsed)}</Text>
+        </View>
+        <Text style={mStyles.routineName} numberOfLines={1}>
+          {routineName ?? 'Quick Workout'}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={mStyles.discardBtn} onPress={handleDiscard} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons name="trash-outline" size={20} color={COLORS.red} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 interface SRTabBarProps {
   state: any;
   navigation: any;
 }
 
 export function SRTabBar({ state, navigation }: SRTabBarProps) {
+  const { isActive, isMinimized } = useWorkoutStore();
   const reduceMotion = useReduceMotion();
   const tabW = (SCREEN_W - TAB_BAR_H_PAD * 2) / 4;
 
@@ -50,7 +101,9 @@ export function SRTabBar({ state, navigation }: SRTabBarProps) {
   const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: pillX.value }] }));
 
   return (
-    <View style={styles.container}>
+    <View>
+      {isActive && isMinimized && <MinimizedWorkoutBar />}
+      <View style={styles.container}>
       {/* Sliding pill — absolutely positioned behind tabs */}
       <Animated.View style={[styles.pill, pillStyle]} pointerEvents="none" />
 
@@ -89,6 +142,7 @@ export function SRTabBar({ state, navigation }: SRTabBarProps) {
           </TouchableOpacity>
         );
       })}
+      </View>
     </View>
   );
 }
@@ -131,5 +185,67 @@ const styles = StyleSheet.create({
   labelInactive: {
     fontWeight: '400',
     color: COLORS.ink3,
+  },
+});
+
+const mStyles = StyleSheet.create({
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.border,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  expandBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  center: {
+    flex: 1,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  greenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.green,
+  },
+  workoutLabel: {
+    color: COLORS.ink,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  elapsed: {
+    color: COLORS.ink2,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  routineName: {
+    color: COLORS.ink3,
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  discardBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
