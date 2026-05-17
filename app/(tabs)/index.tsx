@@ -132,6 +132,7 @@ export default function HomeScreen() {
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
+  const [todayRoutineId, setTodayRoutineId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [readiness, setReadiness] = useState<{ label: string; color: string }>({
     label: '',
@@ -143,7 +144,8 @@ export default function HomeScreen() {
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [sessionsRes, prFlat, routinesRes] = await Promise.all([
+    const todayWd = new Date().getDay();
+    const [sessionsRes, prFlat, routinesRes, scheduleRes] = await Promise.all([
       supabase
         .from('workout_sessions')
         .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at')
@@ -155,16 +157,23 @@ export default function HomeScreen() {
       fetchAllSetsForPersonalBests(supabase, user.id),
       supabase
         .from('routines')
-        .select(`id, name, days:routine_days(id, name, day_index, weekday, exercises:routine_exercises(*, exercise:exercises(*)))`)
+        .select(`id, name, days:routine_days(id, name, day_index, exercises:routine_exercises(*, exercise:exercises(*)))`)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10),
+      supabase
+        .from('weekly_schedule')
+        .select('weekday, routine_id')
+        .eq('user_id', user.id)
+        .eq('weekday', todayWd)
+        .maybeSingle(),
     ]);
 
     if (sessionsRes.data) setSessions(sessionsRes.data as WorkoutSession[]);
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
     if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
+    setTodayRoutineId((scheduleRes.data as any)?.routine_id ?? null);
     setLoading(false);
   }, [user]);
 
@@ -276,28 +285,14 @@ export default function HomeScreen() {
       .catch(() => { /* keep the instant fallback */ });
   }, [loading, sessions, routines]);
 
-  // Find today's scheduled routine day (matches weekday column if set, else fall back to first routine)
-  const todayWeekday = new Date().getDay(); // 0=Sun
-  const todayRoutineDay = useMemo(() => {
-    for (const routine of routines) {
-      for (const day of (routine.days ?? [])) {
-        if (day.weekday === todayWeekday && (day.exercises?.length ?? 0) > 0) {
-          return { routine, day };
-        }
-      }
-    }
+  // Resolve today's routine from weekly_schedule
+  const currentRoutine = useMemo(() => {
+    if (todayRoutineId) return routines.find(r => r.id === todayRoutineId) ?? null;
     return null;
-  }, [routines, todayWeekday]);
+  }, [todayRoutineId, routines]);
 
-  const isRestDay = routines.length > 0 && todayRoutineDay === null;
-  const activeEntry = todayRoutineDay ?? (routines.length > 0 ? (() => {
-    const r = routines[0];
-    const d = r.days?.find(d => (d.exercises?.length ?? 0) > 0) ?? null;
-    return d ? { routine: r, day: d } : null;
-  })() : null);
-
-  const routineDay = activeEntry?.day ?? null;
-  const currentRoutine = activeEntry?.routine ?? null;
+  const isRestDay = routines.length > 0 && !loading && todayRoutineId === null;
+  const routineDay = useMemo(() => currentRoutine?.days?.find(d => (d.exercises?.length ?? 0) > 0) ?? null, [currentRoutine]);
   const dayExercises = routineDay?.exercises ?? [];
   const previewExercises = dayExercises.slice(0, 3);
   const extraCount = Math.max(0, dayExercises.length - 3);
@@ -315,7 +310,7 @@ export default function HomeScreen() {
     return Math.round(totalSets * (avgRest + 30) / 60);
   }, [routineDay]);
 
-  const restDayMessage = useMemo(() => REST_DAY_MESSAGES[todayWeekday % REST_DAY_MESSAGES.length], [todayWeekday]);
+  const restDayMessage = useMemo(() => REST_DAY_MESSAGES[new Date().getDay() % REST_DAY_MESSAGES.length], []);
 
   const handleStartRoutine = () => {
     if (!currentRoutine || !routineDay) {
@@ -406,7 +401,7 @@ export default function HomeScreen() {
           <SRCard style={s.routineCard}>
             <View style={s.routineHeader}>
               <Text style={s.routineLabel}>
-                {todayRoutineDay ? "TODAY'S PLAN" : currentRoutine ? 'YOUR ROUTINE' : 'START TRAINING'}
+                {currentRoutine ? "TODAY'S PLAN" : 'START TRAINING'}
               </Text>
               {estimatedMinutes > 0 && (
                 <View style={s.durationBadge}>
