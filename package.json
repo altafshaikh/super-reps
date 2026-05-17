@@ -24,6 +24,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@hookform/resolvers": "^5.2.2",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@sparticuz/chromium": "^131.0.1",
     "@supabase/supabase-js": "^2.104.1",
     "@vercel/node": "^5.7.13",

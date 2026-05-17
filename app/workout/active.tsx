@@ -6,7 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  FlatList, Modal, ActivityIndicator, Platform, StyleSheet,
+  FlatList, Modal, ActivityIndicator, StyleSheet,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { getCoachAdvice } from '@/lib/ai';
 import { detectTrigger, generateTriggerMessage } from '@/lib/workout-coaching';
 import { formatDuration, formatWeight } from '@/lib/utils';
-import { fetchHistoricalMaxWeightByExercise, findAllSessionPRs } from '@/lib/workout-pr';
+import { fetchHistoricalMaxWeightByExercise } from '@/lib/workout-pr';
 import { resolveSetPrefill } from '@/lib/set-prefill';
 import type { SetHistory } from '@/lib/set-prefill';
 import { COLORS } from '@/constants';
@@ -396,7 +396,7 @@ export default function ActiveWorkoutScreen() {
     startRest, adjustRest, tickRest, skipRest,
     restRemaining, restActive, restSeconds,
     coachText, setCoachText, nextCoachMessage,
-    finishWorkout, resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache,
+    resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache,
   } = useWorkoutStore();
   const { user } = useUserStore();
 
@@ -545,69 +545,19 @@ export default function ActiveWorkoutScreen() {
 
   const handleFinish = () => {
     const completedSets = exercises.flatMap(e => e.sets.filter(s => s.completed));
-    if (exercises.length === 0) {
+    if (exercises.length === 0 || completedSets.length === 0) {
       setShowDiscard(true);
       return;
     }
-    if (completedSets.length === 0) {
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined' && window.confirm('No sets completed. Discard?')) discardWorkout();
-        return;
-      }
-      setShowDiscard(true);
-      return;
-    }
-    void saveAndFinish();
-  };
-
-  const saveAndFinish = async () => {
-    if (!user) return;
-    const { exercises: exs, startedAt: sa, sessionId } = finishWorkout();
-    const now = new Date();
-    const duration = Math.floor((now.getTime() - sa.getTime()) / 1000);
-    const exerciseIds = [...new Set(exs.map(e => e.exercise.id))];
-    const historicalMax = await fetchHistoricalMaxWeightByExercise(user.id, exerciseIds);
-    const allPRs = findAllSessionPRs(exs, historicalMax);
-    let volumeTotal = 0;
-    const setsToInsert: any[] = [];
-    for (const ex of exs) {
-      for (const set of ex.sets.filter(s => s.completed)) {
-        volumeTotal += set.weight_kg * set.reps;
-        setsToInsert.push({
-          session_id: sessionId, exercise_id: ex.exercise.id,
-          set_index: set.set_index, set_type: set.set_type,
-          weight_kg: set.weight_kg, reps: set.reps, rpe: set.rpe,
-          duration_seconds: set.duration_seconds,
-          notes: ex.notes || null,
-          completed_at: new Date().toISOString(),
-        });
-      }
-    }
-    const { error: sessionErr } = await supabase.from('workout_sessions').insert({
-      id: sessionId, user_id: user.id,
-      routine_id: useWorkoutStore.getState().routineId,
-      routine_name: useWorkoutStore.getState().routineName,
-      started_at: sa.toISOString(), finished_at: now.toISOString(),
-      duration_seconds: duration, volume_total: volumeTotal,
-    });
-    if (sessionErr) {
-      const msg = sessionErr.message ?? 'Could not save workout.';
-      if (Platform.OS === 'web' && typeof window !== 'undefined') window.alert(msg);
-      return;
-    }
-    if (setsToInsert.length > 0) {
-      await supabase.from('workout_sets').insert(setsToInsert);
-    }
-    resetWorkout();
-    const routineTitle = useWorkoutStore.getState().routineName ?? 'Quick Workout';
-    router.replace({
+    const volumeTotal = exercises.reduce((a, ex) =>
+      a + ex.sets.filter(s => s.completed).reduce((b, s) => b + s.weight_kg * s.reps, 0), 0);
+    router.push({
       pathname: '/workout/complete',
       params: {
-        routineName: encodeURIComponent(routineTitle),
-        durationSec: String(duration),
-        setCount: String(setsToInsert.length),
+        routineName: encodeURIComponent(routineName ?? 'Quick Workout'),
+        durationSec: String(elapsed),
+        setCount: String(completedSets.length),
         volumeKg: String(Math.round(volumeTotal)),
-        ...(allPRs.length > 0 ? { prsJson: encodeURIComponent(JSON.stringify(allPRs)) } : {}),
       },
     });
   };
