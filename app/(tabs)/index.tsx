@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator,
 } from 'react-native';
@@ -10,8 +10,10 @@ import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
 import type { PersonalRecord, WorkoutSession, Routine, Exercise, WorkoutExerciseInput } from '@/types';
 import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
+import { getReadinessMessage, type ReadinessContext } from '@/lib/ai';
 import { formatWeight } from '@/lib/utils';
 import { COLORS } from '@/constants';
+import { Ionicons } from '@expo/vector-icons';
 import { SRCard, SRDivider, SRSectionLabel } from '@/components/ui';
 
 function formatMuscle(m: string): string {
@@ -25,53 +27,29 @@ function greeting(): string {
   return 'Good evening';
 }
 
-function calcStreak(sessions: WorkoutSession[]): number {
-  if (!sessions.length) return 0;
-  let s = 0;
+function calcWeekSessions(sessions: WorkoutSession[]): number {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = 0; i < 60; i++) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - i);
-    const has = sessions.some(ws => {
-      const d = new Date(ws.started_at);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === day.getTime();
-    });
-    if (has) s++;
-    else if (i > 0) break;
-  }
-  return s;
+  const dow = today.getDay();
+  const daysToMon = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysToMon);
+  monday.setHours(0, 0, 0, 0);
+  const dates = new Set(
+    sessions
+      .filter(s => new Date(s.started_at) >= monday)
+      .map(s => s.started_at.slice(0, 10))
+  );
+  return dates.size;
 }
 
-function readinessAssessment(sessions: WorkoutSession[]): { label: string; color: string } {
-  if (!sessions.length) {
-    return { label: "Fresh start — begin your first workout today!", color: COLORS.green };
-  }
-  const last = new Date(sessions[0].started_at);
-  const daysSince = Math.floor((Date.now() - last.getTime()) / 86400000);
-  const lastVol = sessions[0].volume_total ?? 0;
+const TONE_COLOR: Record<string, string> = {
+  green: COLORS.green,
+  amber: COLORS.amber,
+  blue: COLORS.blue,
+  muted: COLORS.ink3,
+};
 
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const weekFreq = sessions.filter(s => new Date(s.started_at).getTime() > weekAgo).length;
-
-  if (daysSince === 0) {
-    return { label: "You already trained today — great consistency!", color: COLORS.green };
-  }
-  if (daysSince === 1 && lastVol > 5000) {
-    return { label: "Heavy session yesterday — consider lighter work or rest today.", color: COLORS.amber };
-  }
-  if (daysSince === 1) {
-    return { label: "Trained yesterday — a lighter session or rest is smart today.", color: COLORS.amber };
-  }
-  if (daysSince <= 3) {
-    return { label: `${daysSince} days rest — you're recovered and ready to push.`, color: COLORS.green };
-  }
-  if (daysSince <= 7) {
-    return { label: `${daysSince} days since your last session — time to get back at it!`, color: COLORS.blue };
-  }
-  return { label: "It's been a while — ease back in with moderate weights today.", color: COLORS.ink3 };
-}
+const WEEKDAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 // ── 7-day mini heatmap ───────────────────────────────────────
 
@@ -109,11 +87,16 @@ function WeekHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
             <View key={i} style={s.heatmapDay}>
               <View style={[
                 s.heatmapDot,
-                trained && s.heatmapDotFilled,
+                trained && !isToday && s.heatmapDotFilled,
+                isToday && trained && s.heatmapDotTodayDone,
                 isToday && !trained && s.heatmapDotToday,
                 isFuture && s.heatmapDotFuture,
-              ]} />
-              <Text style={[s.heatmapLabel, isToday && { color: COLORS.blue, fontWeight: '700' }]}>
+              ]}>
+                {isToday && trained && (
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                )}
+              </View>
+              <Text style={[s.heatmapLabel, isToday && { color: COLORS.green, fontWeight: '700' }]}>
                 {label}
               </Text>
             </View>
@@ -150,6 +133,12 @@ export default function HomeScreen() {
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [loading, setLoading] = useState(true);
+  const [readiness, setReadiness] = useState<{ label: string; color: string }>({
+    label: '',
+    color: COLORS.green,
+  });
+  const [readinessLoading, setReadinessLoading] = useState(true);
+  const readinessCacheKey = useRef<string>('');
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
@@ -183,16 +172,116 @@ export default function HomeScreen() {
 
   const userName = user?.name ?? user?.username ?? user?.email?.split('@')[0] ?? 'Lifter';
   const initial = userName[0]?.toUpperCase() ?? 'U';
-  const streak = useMemo(() => calcStreak(sessions), [sessions]);
-  const readiness = useMemo(() => readinessAssessment(sessions), [sessions]);
+  const streak = useMemo(() => calcWeekSessions(sessions), [sessions]);
   const top3PRs = useMemo(() => personalBests.slice(0, 3), [personalBests]);
+
+  // Build readiness context and call LLM once per unique sessions+routines combination
+  useEffect(() => {
+    if (loading) return;
+
+    // No data at all — show a default immediately
+    if (!sessions.length && !routines.length) {
+      setReadiness({ label: "Fresh start — log your first workout today!", color: COLORS.green });
+      setReadinessLoading(false);
+      return;
+    }
+
+    const cacheKey = `${sessions.length}-${routines.length}-${sessions[0]?.started_at ?? ''}`;
+    if (cacheKey === readinessCacheKey.current) return;
+    readinessCacheKey.current = cacheKey;
+
+    // Show instant fallback while LLM loads
+    const last = sessions[0];
+    const daysSince = last
+      ? Math.floor((Date.now() - new Date(last.started_at).getTime()) / 86400000)
+      : 99;
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const weekFreq = sessions.filter(s => new Date(s.started_at).getTime() > weekAgo).length;
+    const instantLabel =
+      daysSince === 0 ? weekFreq >= 4 ? "Solid week — you trained today, keep it up!"
+        : weekFreq >= 2 ? "You trained today — building momentum this week."
+        : "You trained today — aim for more sessions this week."
+      : daysSince === 1 ? "Trained yesterday — ready to go again today."
+      : daysSince <= 3 ? `${daysSince} days rest — recovered and ready to push.`
+      : "Time to get back in — let's pick up where you left off.";
+    const instantColor = daysSince === 0 ? COLORS.green : daysSince <= 1 ? COLORS.amber : COLORS.blue;
+    setReadiness({ label: instantLabel, color: instantColor });
+    setReadinessLoading(false);
+
+    const today = new Date();
+    const todayStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+    // Monday of this week
+    const dow = today.getDay();
+    const daysToMon = dow === 0 ? 6 : dow - 1;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - daysToMon);
+    monday.setHours(0, 0, 0, 0);
+
+    // Days from Monday through today (YYYY-MM-DD)
+    const weekRange: string[] = [];
+    for (let i = 0; i <= daysToMon; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      weekRange.push(d.toISOString().slice(0, 10));
+    }
+
+    const weekDaysTrained = [...new Set(
+      sessions
+        .filter(s => weekRange.includes(s.started_at.slice(0, 10)))
+        .map(s => s.started_at.slice(0, 10))
+    )];
+
+    // Scheduled days across all routines
+    const allScheduledDays: ReadinessContext['scheduledDays'] = [];
+    const seenWeekdays = new Set<number>();
+    for (const routine of routines) {
+      for (const day of (routine.days ?? [])) {
+        const wd = day.weekday;
+        if (wd == null || seenWeekdays.has(wd)) continue;
+        seenWeekdays.add(wd);
+        const mgs = (day.exercises ?? []).flatMap(re =>
+          (re.exercise?.muscle_groups ?? []).map(m => formatMuscle(m))
+        );
+        allScheduledDays.push({
+          weekdayName: WEEKDAY_NAMES[wd],
+          dayName: day.name,
+          muscleGroups: [...new Set(mgs)],
+        });
+      }
+    }
+
+    // Which dates in weekRange had a scheduled workout
+    const weekDaysScheduled = weekRange.filter(dateStr => {
+      const wdName = WEEKDAY_NAMES[new Date(dateStr).getDay()];
+      return allScheduledDays.some(d => d.weekdayName === wdName);
+    });
+
+    const ctx: ReadinessContext = {
+      todayLabel: todayStr,
+      sessions: sessions.slice(0, 14).map(s => ({
+        date: s.started_at.slice(0, 10),
+        routineName: s.routine_name,
+        volume: s.volume_total ?? 0,
+        durationMinutes: Math.round((s.duration_seconds ?? 0) / 60),
+      })),
+      scheduledDays: allScheduledDays,
+      weekDaysTrained,
+      weekDaysScheduled,
+    };
+
+    // Silently upgrade to LLM message in the background — no spinner shown
+    getReadinessMessage(ctx)
+      .then(res => setReadiness({ label: res.label, color: TONE_COLOR[res.color] ?? COLORS.blue }))
+      .catch(() => { /* keep the instant fallback */ });
+  }, [loading, sessions, routines]);
 
   // Find today's scheduled routine day (matches weekday column if set, else fall back to first routine)
   const todayWeekday = new Date().getDay(); // 0=Sun
   const todayRoutineDay = useMemo(() => {
     for (const routine of routines) {
       for (const day of (routine.days ?? [])) {
-        if ((day as any).weekday === todayWeekday && (day.exercises?.length ?? 0) > 0) {
+        if (day.weekday === todayWeekday && (day.exercises?.length ?? 0) > 0) {
           return { routine, day };
         }
       }
@@ -270,15 +359,36 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* AI readiness card */}
-        <SRCard style={s.readinessCard}>
-          <View style={s.readinessRow}>
-            <View style={[s.readinessDot, { backgroundColor: readiness.color }]} />
-            <Text style={[s.readinessText, { color: readiness.color }]}>{readiness.label}</Text>
+        {/* AI Coach card */}
+        <SRCard style={s.coachCard}>
+          <View style={s.coachTopRow}>
+            {/* Avatar */}
+            <View style={[s.coachAvatar, { borderColor: COLORS.green }]}>
+              <Ionicons name="barbell-outline" size={18} color={COLORS.green} />
+            </View>
+
+            {/* Coach label */}
+            <View style={s.coachLabelCol}>
+              <Text style={s.coachLabel}>MESSAGE FROM COACH</Text>
+            </View>
+
+            {/* Week sessions badge */}
+            <View style={s.streakBadge}>
+              <Text style={s.streakVal}>{streak > 0 ? `${streak} 🔥` : '0'}</Text>
+              <Text style={s.streakLab}>this week</Text>
+            </View>
           </View>
-          <View style={s.streakRow}>
-            <Text style={s.streakVal}>{streak > 0 ? `${streak} 🔥` : '0'}</Text>
-            <Text style={s.streakLab}>day streak</Text>
+
+          {/* Speech bubble */}
+          <View style={[s.speechBubble, { borderLeftColor: readiness.color, backgroundColor: readiness.color + '18' }]}>
+            {readinessLoading ? (
+              <View style={s.typingRow}>
+                <ActivityIndicator size="small" color={COLORS.ink3} />
+                <Text style={s.typingText}>Analysing your week…</Text>
+              </View>
+            ) : (
+              <Text style={s.coachMessage}>{readiness.label}</Text>
+            )}
           </View>
         </SRCard>
 
@@ -354,6 +464,9 @@ export default function HomeScreen() {
               <View key={pr.id}>
                 {i > 0 && <SRDivider indent={20} />}
                 <View style={s.prRow}>
+                  <View style={s.prIconWrap}>
+                    <Ionicons name="barbell-outline" size={14} color={COLORS.blue} />
+                  </View>
                   <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
                   <Text style={s.prVal}>{formatWeight(Number(pr.value))} kg</Text>
                 </View>
@@ -377,13 +490,33 @@ const s = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 99, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.bg, fontSize: 20, fontWeight: '900' },
 
-  readinessCard: { padding: 16 },
-  readinessRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
-  readinessDot: { width: 8, height: 8, borderRadius: 99, marginTop: 4 },
-  readinessText: { fontSize: 14, fontWeight: '600', flex: 1, lineHeight: 20 },
-  streakRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 10 },
-  streakVal: { fontSize: 22, fontWeight: '900', color: COLORS.ink },
-  streakLab: { fontSize: 12, color: COLORS.ink3 },
+  // Coach card
+  coachCard: { padding: 16, gap: 12 },
+  coachTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  coachAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  coachLabelCol: { flex: 1, gap: 2 },
+  coachLabel: { fontSize: 10, fontWeight: '700', color: COLORS.ink3, letterSpacing: 1 },
+  coachOnlineRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  coachOnlineDot: { width: 6, height: 6, borderRadius: 3 },
+  coachOnlineText: { fontSize: 11, fontWeight: '600' },
+  streakBadge: { alignItems: 'flex-end' },
+  streakVal: { fontSize: 20, fontWeight: '900', color: COLORS.ink },
+  streakLab: { fontSize: 11, color: COLORS.ink3 },
+  speechBubble: {
+    backgroundColor: COLORS.surface2,
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  coachMessage: { fontSize: 14, fontWeight: '500', color: COLORS.ink, lineHeight: 22 },
+  typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  typingText: { fontSize: 13, color: COLORS.ink3, fontStyle: 'italic' },
 
   restDayCard: { padding: 20, gap: 8, borderColor: `${COLORS.amber}30`, borderWidth: 1 },
   restDayLabel: { fontSize: 10, color: COLORS.amber, fontWeight: '800', letterSpacing: 1 },
@@ -413,13 +546,15 @@ const s = StyleSheet.create({
   heatmapCount: { fontSize: 12, color: COLORS.ink3, fontWeight: '600' },
   heatmapRow: { flexDirection: 'row', justifyContent: 'space-between' },
   heatmapDay: { alignItems: 'center', gap: 4 },
-  heatmapDot: { width: 32, height: 32, borderRadius: 8, backgroundColor: COLORS.surface2 },
+  heatmapDot: { width: 32, height: 32, borderRadius: 8, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
   heatmapDotFilled: { backgroundColor: COLORS.blue },
-  heatmapDotToday: { borderWidth: 1.5, borderColor: COLORS.blue },
+  heatmapDotTodayDone: { backgroundColor: COLORS.green },
+  heatmapDotToday: { backgroundColor: COLORS.green },
   heatmapDotFuture: { opacity: 0.3 },
   heatmapLabel: { fontSize: 10, color: COLORS.ink3, fontWeight: '600' },
 
-  prRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 20 },
+  prRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 16 },
+  prIconWrap: { width: 30, height: 30, borderRadius: 8, backgroundColor: `${COLORS.blue}18`, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   prName: { fontSize: 14, fontWeight: '600', color: COLORS.ink, flex: 1, marginRight: 12 },
   prVal: { fontSize: 16, fontWeight: '800', color: COLORS.green },
 });

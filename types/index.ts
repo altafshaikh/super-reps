@@ -54,6 +54,7 @@ export interface RoutineDay {
   id: string;
   day_index: number;
   name: string;
+  weekday?: number | null;
   exercises: RoutineExercise[];
 }
 

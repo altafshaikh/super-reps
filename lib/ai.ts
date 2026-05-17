@@ -257,6 +257,111 @@ Give a short practical tip for my next set — weight suggestion, form cue, or m
   }
 }
 
+// ── Readiness / home-screen status message ───────────────────────────────────
+
+export interface ReadinessContext {
+  todayLabel: string;            // e.g. "Sunday, May 17"
+  sessions: {
+    date: string;                // YYYY-MM-DD
+    routineName: string | null;
+    volume: number;              // kg
+    durationMinutes: number;
+  }[];
+  scheduledDays: {               // all weekdays the routine covers
+    weekdayName: string;         // e.g. "Monday"
+    dayName: string;             // e.g. "Push Day"
+    muscleGroups: string[];
+  }[];
+  weekDaysTrained: string[];     // YYYY-MM-DD of sessions this Mon–today
+  weekDaysScheduled: string[];   // YYYY-MM-DD of scheduled days this Mon–today
+}
+
+/** Returns { label, color } where color is one of: green | amber | blue | muted */
+export async function getReadinessMessage(
+  ctx: ReadinessContext,
+): Promise<{ label: string; color: 'green' | 'amber' | 'blue' | 'muted' }> {
+  // Build a compact plain-text brief for the LLM
+  const last = ctx.sessions[0];
+  const lastLine = last
+    ? `Last workout: ${last.routineName ?? 'Ad-hoc'} on ${last.date} — ${last.volume}kg volume, ${last.durationMinutes} min`
+    : 'No previous workouts logged.';
+
+  const weekTrained = ctx.weekDaysTrained.length;
+  const weekScheduled = ctx.weekDaysScheduled.length;
+  const skippedDates = ctx.weekDaysScheduled.filter(d => !ctx.weekDaysTrained.includes(d));
+
+  // Map skipped dates back to scheduled day info
+  const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const skippedDetails = skippedDates.map(dateStr => {
+    const wd = WEEKDAYS[new Date(dateStr).getDay()];
+    const info = ctx.scheduledDays.find(s => s.weekdayName === wd);
+    return info
+      ? `${wd} (${info.dayName} — ${info.muscleGroups.join(', ')})`
+      : wd;
+  });
+
+  // Muscle group coverage this week
+  const trainedNames = ctx.sessions
+    .filter(s => ctx.weekDaysTrained.includes(s.date))
+    .map(s => s.routineName ?? 'Ad-hoc');
+
+  const allScheduledMuscles = ctx.scheduledDays.flatMap(d => d.muscleGroups);
+  const trainedMuscles = ctx.scheduledDays
+    .filter(d => ctx.weekDaysTrained.some(
+      date => WEEKDAYS[new Date(date).getDay()] === d.weekdayName
+    ))
+    .flatMap(d => d.muscleGroups);
+  const untrainedMuscles = [...new Set(allScheduledMuscles.filter(m => !trainedMuscles.includes(m)))];
+
+  const brief = [
+    `Today: ${ctx.todayLabel}`,
+    lastLine,
+    `This week: ${weekTrained} session(s) trained out of ${weekScheduled} scheduled so far (${trainedNames.join(', ') || 'none'}).`,
+    skippedDetails.length
+      ? `Skipped this week: ${skippedDetails.join('; ')}.`
+      : 'No skipped sessions this week.',
+    untrainedMuscles.length
+      ? `Muscle groups not yet hit this week: ${untrainedMuscles.join(', ')}.`
+      : 'All scheduled muscle groups covered this week.',
+  ].join('\n');
+
+  const completion = await client.chat.completions.create({
+    model: COACH_MODEL,
+    max_tokens: 60,
+    temperature: 0.7,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a sharp, honest personal trainer writing a single-line status message for a fitness app home screen. ' +
+          'Rules: plain text only, no markdown, no emojis, max 15 words, present tense, second person ("you"). ' +
+          'Be specific about skipped muscle groups or missed sessions when relevant. ' +
+          'Do NOT say "great consistency" unless they have trained 4+ days this week. ' +
+          'Respond ONLY with a JSON object on one line: {"label":"...","tone":"green|amber|blue|muted"} ' +
+          'where tone reflects: green=on-track/strong week, amber=warning/fatigue/heavy, blue=returning/low frequency, muted=long gap/just starting.',
+      },
+      {
+        role: 'user',
+        content: brief,
+      },
+    ],
+  });
+
+  try {
+    const raw = completion.choices[0]?.message?.content?.trim() ?? '';
+    const parsed = JSON.parse(raw) as { label: string; tone: string };
+    const toneMap: Record<string, 'green' | 'amber' | 'blue' | 'muted'> = {
+      green: 'green', amber: 'amber', blue: 'blue', muted: 'muted',
+    };
+    return {
+      label: parsed.label ?? 'Ready to train — let\'s go.',
+      color: toneMap[parsed.tone] ?? 'blue',
+    };
+  } catch {
+    return { label: 'Ready to train — let\'s go.', color: 'blue' };
+  }
+}
+
 export async function getWeeklyReview(
   sessions: { date: string; exercises: string[]; volume: number }[],
 ): Promise<string> {

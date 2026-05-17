@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useWorkoutStore } from '@/stores/workoutStore';
-import type { Routine } from '@/types';
+import type { Routine, RoutineDay } from '@/types';
 import { COLORS } from '@/constants';
+
+const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function RoutineDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -13,6 +16,7 @@ export default function RoutineDetailScreen() {
   const { startWorkout } = useWorkoutStore();
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingDay, setSavingDay] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -38,9 +42,21 @@ export default function RoutineDetailScreen() {
     ]);
   };
 
+  const assignWeekday = async (day: RoutineDay, weekday: number | null) => {
+    if (!routine) return;
+    setSavingDay(day.id);
+    const newWeekday = day.weekday === weekday ? null : weekday;
+    await supabase.from('routine_days').update({ weekday: newWeekday }).eq('id', day.id);
+    setRoutine(prev => prev ? {
+      ...prev,
+      days: prev.days.map(d => d.id === day.id ? { ...d, weekday: newWeekday } : d),
+    } : prev);
+    setSavingDay(null);
+  };
+
   if (loading) {
     return (
-      <View className="flex-1 bg-surface items-center justify-center">
+      <View style={s.center}>
         <ActivityIndicator color={COLORS.primary} />
       </View>
     );
@@ -48,8 +64,8 @@ export default function RoutineDetailScreen() {
 
   if (!routine) {
     return (
-      <View className="flex-1 bg-surface items-center justify-center">
-        <Text className="text-white">Routine not found</Text>
+      <View style={s.center}>
+        <Text style={{ color: COLORS.ink }}>Routine not found</Text>
       </View>
     );
   }
@@ -57,33 +73,30 @@ export default function RoutineDetailScreen() {
   const workoutDays = routine.days?.filter(d => d.exercises?.length > 0) ?? [];
 
   return (
-    <View className="flex-1 bg-surface">
+    <View style={s.root}>
       {/* Header */}
-      <View className="px-5 pt-16 pb-4 flex-row items-center gap-3">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="w-9 h-9 rounded-full bg-surface-card items-center justify-center"
-        >
-          <Ionicons name="arrow-back" size={20} color={COLORS.textMuted} />
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Ionicons name="arrow-back" size={20} color={COLORS.ink2} />
         </TouchableOpacity>
-        <Text className="text-white font-bold text-lg flex-1" numberOfLines={1}>{routine.name}</Text>
+        <Text style={s.title} numberOfLines={1}>{routine.name}</Text>
         <TouchableOpacity onPress={handleDelete}>
-          <Ionicons name="trash-outline" size={22} color={COLORS.error} />
+          <Ionicons name="trash-outline" size={22} color={COLORS.red} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={s.scroll}>
         {routine.description && (
-          <Text className="text-white/50 text-sm mb-4">{routine.description}</Text>
+          <Text style={s.desc}>{routine.description}</Text>
         )}
 
-        {/* Start workout buttons per day */}
-        <Text className="text-white font-bold text-base mb-3">Start Workout</Text>
-        <View className="gap-2 mb-6">
+        {/* Start workout */}
+        <Text style={s.sectionLabel}>Start Workout</Text>
+        <View style={s.gap2}>
           {workoutDays.map(day => (
             <TouchableOpacity
               key={day.id}
-              className="bg-brand-600 rounded-xl p-4 flex-row items-center justify-between"
+              style={s.startBtn}
               onPress={() => {
                 const inputs = (day.exercises ?? [])
                   .filter((re: any) => re.exercise)
@@ -98,40 +111,67 @@ export default function RoutineDetailScreen() {
               }}
             >
               <View>
-                <Text className="text-white font-bold">{day.name}</Text>
-                <Text className="text-white/70 text-xs mt-0.5">
-                  {day.exercises?.length} exercises
-                </Text>
+                <Text style={s.startBtnName}>{day.name}</Text>
+                <Text style={s.startBtnSub}>{day.exercises?.length} exercises</Text>
               </View>
               <Ionicons name="play-circle" size={30} color="white" />
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Exercise list by day */}
-        <Text className="text-white font-bold text-base mb-3">Programme</Text>
-        <View className="gap-4">
+        {/* Programme with weekday assignment */}
+        <Text style={s.sectionLabel}>Programme</Text>
+        <View style={s.gap4}>
           {routine.days?.map(day => (
-            <View key={day.id} className="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
-              <Text className="px-4 pt-3.5 pb-2 text-white font-bold">{day.name}</Text>
+            <View key={day.id} style={s.dayCard}>
+              {/* Day header */}
+              <View style={s.dayHeader}>
+                <Text style={s.dayName}>{day.name}</Text>
+                {day.weekday != null && (
+                  <View style={s.assignedBadge}>
+                    <Text style={s.assignedBadgeText}>{DAY_NAMES[day.weekday]}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Weekday picker */}
+              <View style={s.weekdayRow}>
+                <Text style={s.weekdayLabel}>Schedule</Text>
+                <View style={s.weekdayBtns}>
+                  {DAYS.map((label, i) => {
+                    const assigned = day.weekday === i;
+                    const saving = savingDay === day.id;
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        onPress={() => assignWeekday(day, i)}
+                        disabled={saving}
+                        style={[s.dayBtn, assigned && s.dayBtnActive]}
+                      >
+                        <Text style={[s.dayBtnText, assigned && s.dayBtnTextActive]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Exercises */}
               {day.exercises?.length === 0 ? (
-                <Text className="px-4 pb-3 text-white/30 text-sm">Rest Day</Text>
+                <Text style={s.restLabel}>Rest Day</Text>
               ) : (
                 day.exercises?.map((re, i) => (
                   <View
                     key={re.id}
-                    className={`px-4 py-3 flex-row items-center justify-between ${
-                      i < (day.exercises?.length ?? 0) - 1 ? 'border-t border-surface-border/50' : 'border-t border-surface-border/50'
-                    }`}
+                    style={[s.exRow, i > 0 && s.exRowBorder]}
                   >
-                    <View className="flex-1">
-                      <Text className="text-white text-sm font-medium">{re.exercise?.name}</Text>
-                      <Text className="text-white/40 text-xs mt-0.5">{re.exercise?.category}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.exName}>{re.exercise?.name}</Text>
+                      <Text style={s.exCategory}>{re.exercise?.category}</Text>
                     </View>
-                    <Text className="text-brand-500 text-sm font-semibold">
-                      {(re as any).sets_config?.sets}×{(re as any).sets_config?.rep_range}
-                    </Text>
-                    <Text className="text-white/30 text-xs ml-3">{re.rest_seconds}s rest</Text>
+                    <Text style={s.exSets}>{re.sets}×{re.rep_range}</Text>
+                    <Text style={s.exRest}>{re.rest_seconds}s</Text>
                   </View>
                 ))
               )}
@@ -142,3 +182,38 @@ export default function RoutineDetailScreen() {
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: COLORS.bg },
+  center: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center' },
+  title: { flex: 1, color: COLORS.ink, fontWeight: '700', fontSize: 18 },
+  desc: { color: COLORS.ink3, fontSize: 13, marginBottom: 16 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionLabel: { color: COLORS.ink, fontWeight: '700', fontSize: 15, marginBottom: 10, marginTop: 4 },
+  gap2: { gap: 8, marginBottom: 24 },
+  gap4: { gap: 16 },
+  startBtn: { backgroundColor: COLORS.primary, borderRadius: 14, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  startBtnName: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  startBtnSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  dayCard: { backgroundColor: COLORS.surface, borderRadius: 14, overflow: 'hidden' },
+  dayHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, gap: 8 },
+  dayName: { color: COLORS.ink, fontWeight: '700', fontSize: 14, flex: 1 },
+  assignedBadge: { backgroundColor: COLORS.primary + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  assignedBadgeText: { color: COLORS.primary, fontWeight: '700', fontSize: 11 },
+  weekdayRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.surface2 },
+  weekdayLabel: { color: COLORS.ink3, fontSize: 11, fontWeight: '600', width: 56 },
+  weekdayBtns: { flexDirection: 'row', gap: 6, flex: 1 },
+  dayBtn: { flex: 1, aspectRatio: 1, borderRadius: 8, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  dayBtnActive: { backgroundColor: COLORS.primary },
+  dayBtnText: { color: COLORS.ink3, fontSize: 11, fontWeight: '600' },
+  dayBtnTextActive: { color: '#fff', fontWeight: '700' },
+  restLabel: { color: COLORS.ink3, fontSize: 13, paddingHorizontal: 16, paddingVertical: 12 },
+  exRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
+  exRowBorder: { borderTopWidth: 1, borderTopColor: COLORS.surface2 },
+  exName: { color: COLORS.ink, fontSize: 13, fontWeight: '500' },
+  exCategory: { color: COLORS.ink3, fontSize: 11, marginTop: 1 },
+  exSets: { color: COLORS.primary, fontSize: 13, fontWeight: '600', marginRight: 10 },
+  exRest: { color: COLORS.ink3, fontSize: 11 },
+});
