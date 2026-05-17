@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Animated, {
-  FadeIn, FadeOut, SlideInUp, SlideOutUp,
+  FadeIn, FadeOut, SlideInUp, SlideOutUp, SlideInDown, SlideOutDown,
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
   runOnJS,
 } from 'react-native-reanimated';
@@ -72,8 +72,8 @@ function RestTimerBar({
 }) {
   return (
     <Animated.View
-      entering={SlideInUp.springify().damping(20)}
-      exiting={SlideOutUp.duration(250)}
+      entering={SlideInDown.springify().damping(20)}
+      exiting={SlideOutDown.duration(250)}
       style={[s.restBar, { paddingBottom: insetBottom + 8 }]}
     >
       {coachMsg && (
@@ -684,26 +684,26 @@ export default function ActiveWorkoutScreen() {
         contentContainerStyle={[s.scroll, { paddingBottom: restActive ? 120 : 40 }]}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Stats strip — always visible */}
+        <View style={s.statsStrip}>
+          <View style={s.statItem}>
+            <Text style={s.statValueBlue}>{formatDuration(elapsed)}</Text>
+            <Text style={s.statLabel}>Duration</Text>
+          </View>
+          <View style={s.statDivider} />
+          <View style={s.statItem}>
+            <Text style={s.statValue}>{Math.round(totalVolumeKg)} kg</Text>
+            <Text style={s.statLabel}>Volume</Text>
+          </View>
+          <View style={s.statDivider} />
+          <View style={s.statItem}>
+            <Text style={s.statValue}>{doneSets}</Text>
+            <Text style={s.statLabel}>Sets</Text>
+          </View>
+        </View>
+
         {exercises.length === 0 ? (
           <View style={s.emptyState}>
-            {/* Stats strip */}
-            <View style={s.statsStrip}>
-              <View style={s.statItem}>
-                <Text style={s.statValueBlue}>{formatDuration(elapsed)}</Text>
-                <Text style={s.statLabel}>Duration</Text>
-              </View>
-              <View style={s.statDivider} />
-              <View style={s.statItem}>
-                <Text style={s.statValue}>{Math.round(totalVolumeKg)} kg</Text>
-                <Text style={s.statLabel}>Volume</Text>
-              </View>
-              <View style={s.statDivider} />
-              <View style={s.statItem}>
-                <Text style={s.statValue}>{doneSets}</Text>
-                <Text style={s.statLabel}>Sets</Text>
-              </View>
-            </View>
-
             {/* Empty state content */}
             <View style={s.emptyContent}>
               <Ionicons name="barbell-outline" size={80} color={COLORS.ink4} />
@@ -1048,14 +1048,16 @@ const s = StyleSheet.create({
   },
   addExTxt: { color: COLORS.textDim, fontSize: 14 },
 
-  // Empty state
-  emptyState: { paddingTop: 8 },
+  // Stats strip (always visible)
   statsStrip: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surface2, borderRadius: 16,
     paddingVertical: 14, marginBottom: 20,
     borderWidth: 0.5, borderColor: COLORS.border,
   },
+
+  // Empty state
+  emptyState: {},
   statItem: { flex: 1, alignItems: 'center' },
   statValue: { color: COLORS.ink, fontWeight: '700', fontSize: 17 },
   statValueBlue: { color: BLUE_ACCENT, fontWeight: '700', fontSize: 17 },
