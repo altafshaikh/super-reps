@@ -204,9 +204,8 @@ export default function WorkoutsScreen() {
               const exCount = totalExerciseCount(routine);
               const muscles = routineMuscles(routine);
               const mins    = estimateRoutineMinutes(routine);
-              const assignedEntry = schedule.find(e => e.routine_id === routine.id);
-              const assignedDay   = assignedEntry != null ? DAY_SHORT[assignedEntry.weekday] : null;
-              const isToday       = assignedEntry?.weekday === todayWd;
+              const assignedEntries = schedule.filter(e => e.routine_id === routine.id);
+              const hasToday = assignedEntries.some(e => e.weekday === todayWd);
               return (
                 <View key={routine.id} style={s.routineCard}>
                   <TouchableOpacity
@@ -216,17 +215,27 @@ export default function WorkoutsScreen() {
                   >
                     <View style={s.routineNameRow}>
                       <Text style={s.routineName}>{routine.name}</Text>
+                      {/* Day badges — tap navigates to edit routine to manage schedule */}
                       <TouchableOpacity
-                        style={[s.dayBadge, isToday && s.dayBadgeToday]}
-                        onPress={() => {
-                          setPickingRoutineId(routine.id);
-                          setPickingDay(assignedEntry?.weekday ?? -1);
-                        }}
+                        style={s.dayBadgesRow}
+                        onPress={() => router.push(`/routines/edit/${routine.id}`)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={[s.dayBadgeTxt, isToday && s.dayBadgeTxtToday]}>
-                          {assignedDay ?? '+ Day'}
-                        </Text>
+                        {assignedEntries.length === 0 ? (
+                          <View style={s.dayBadge}>
+                            <Text style={s.dayBadgeTxt}>+ Day</Text>
+                          </View>
+                        ) : (
+                          assignedEntries
+                            .sort((a, b) => a.weekday - b.weekday)
+                            .map(e => (
+                              <View key={e.weekday} style={[s.dayBadge, e.weekday === todayWd && s.dayBadgeToday]}>
+                                <Text style={[s.dayBadgeTxt, e.weekday === todayWd && s.dayBadgeTxtToday]}>
+                                  {DAY_SHORT[e.weekday]}
+                                </Text>
+                              </View>
+                            ))
+                        )}
                       </TouchableOpacity>
                     </View>
                     {muscles.length > 0 && (
@@ -381,6 +390,7 @@ const s = StyleSheet.create({
 
   // Day badge on routine card
   routineNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  dayBadgesRow: { flexDirection: 'row', gap: 4 },
   dayBadge: {
     backgroundColor: COLORS.surface2, borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 3,

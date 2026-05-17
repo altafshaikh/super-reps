@@ -138,8 +138,9 @@ export default function HomeScreen() {
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [personalBests, setPersonalBests] = useState<PersonalRecord[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
-  const [todayRoutineId, setTodayRoutineId] = useState<string | null>(null);
-  const [hasSchedule, setHasSchedule]       = useState(false);
+  const [todayRoutineId, setTodayRoutineId]   = useState<string | null>(null);
+  const [allSchedule, setAllSchedule]         = useState<{ weekday: number; routine_id: string }[]>([]);
+  const [hasSchedule, setHasSchedule]         = useState(false);
   const [loading, setLoading] = useState(true);
   const [readiness, setReadiness] = useState<{ label: string; color: string }>({
     label: '',
@@ -152,7 +153,7 @@ export default function HomeScreen() {
     if (!user) return;
     setLoading(true);
     const todayWd = new Date().getDay();
-    const [sessionsRes, prFlat, routinesRes, scheduleRes, scheduleCountRes] = await Promise.all([
+    const [sessionsRes, prFlat, routinesRes, scheduleRes] = await Promise.all([
       supabase
         .from('workout_sessions')
         .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at')
@@ -171,12 +172,6 @@ export default function HomeScreen() {
       supabase
         .from('weekly_schedule')
         .select('weekday, routine_id')
-        .eq('user_id', user.id)
-        .eq('weekday', todayWd)
-        .maybeSingle(),
-      supabase
-        .from('weekly_schedule')
-        .select('weekday', { count: 'exact', head: true })
         .eq('user_id', user.id),
     ]);
 
@@ -184,8 +179,11 @@ export default function HomeScreen() {
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
     if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
-    setTodayRoutineId((scheduleRes.data as any)?.routine_id ?? null);
-    setHasSchedule((scheduleCountRes.count ?? 0) > 0);
+
+    const sched = (scheduleRes.data ?? []) as { weekday: number; routine_id: string }[];
+    setAllSchedule(sched);
+    setTodayRoutineId(sched.find(e => e.weekday === todayWd)?.routine_id ?? null);
+    setHasSchedule(sched.length > 0);
     setLoading(false);
   }, [user]);
 
@@ -320,6 +318,21 @@ export default function HomeScreen() {
   }, [todaySession?.id]);
   // Only show REST DAY if: user has a schedule configured, today is not a training day, and hasn't trained today
   const isRestDay = !loading && hasSchedule && todayRoutineId === null && !trainedToday;
+
+  // Next scheduled workout after today
+  const nextScheduled = useMemo(() => {
+    if (!hasSchedule) return null;
+    const todayWd = new Date().getDay();
+    for (let i = 1; i <= 7; i++) {
+      const wd = (todayWd + i) % 7;
+      const entry = allSchedule.find(e => e.weekday === wd);
+      if (entry) {
+        const routine = routines.find(r => r.id === entry.routine_id) ?? null;
+        return routine ? { weekday: wd, routine } : null;
+      }
+    }
+    return null;
+  }, [allSchedule, routines]);
   const routineDay = useMemo(() => currentRoutine?.days?.find(d => (d.exercises?.length ?? 0) > 0) ?? null, [currentRoutine]);
   const dayExercises = routineDay?.exercises ?? [];
   const previewExercises = dayExercises.slice(0, 3);
@@ -522,6 +535,67 @@ export default function HomeScreen() {
           </SRCard>
         )}
 
+        {/* Next scheduled workout — shown when trained today OR on any rest day */}
+        {!isActive && (trainedToday || (hasSchedule && todayRoutineId === null)) && nextScheduled && (() => {
+          const { weekday, routine } = nextScheduled;
+          const day = routine.days?.find(d => (d.exercises?.length ?? 0) > 0);
+          const exercises = day?.exercises ?? [];
+          const preview = exercises.slice(0, 3);
+          const extra = Math.max(0, exercises.length - 3);
+          const muscles = (() => {
+            const s = new Set<string>();
+            exercises.forEach(re => re.exercise?.muscle_groups?.forEach(mg => s.add(formatMuscle(mg))));
+            return [...s].slice(0, 4);
+          })();
+          const daysAway = (() => {
+            const todayWd = new Date().getDay();
+            let diff = weekday - todayWd;
+            if (diff <= 0) diff += 7;
+            return diff;
+          })();
+          const dayLabel = daysAway === 1 ? 'Tomorrow' : WEEKDAY_NAMES[weekday];
+
+          return (
+            <SRCard style={s.nextCard}>
+              <View style={s.nextHeader}>
+                <View>
+                  <Text style={s.nextLabel}>NEXT WORKOUT</Text>
+                  <Text style={s.nextDay}>{dayLabel}</Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push(`/routines/${routine.id}`)}>
+                  <Text style={s.nextSeeAll}>View →</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={s.nextRoutineName} numberOfLines={1}>{routine.name}</Text>
+
+              {muscles.length > 0 && (
+                <View style={s.tagRow}>
+                  {muscles.map(tag => (
+                    <View key={tag} style={s.tag}><Text style={s.tagText}>{tag}</Text></View>
+                  ))}
+                </View>
+              )}
+
+              {exercises.length > 0 && (
+                <View style={s.exerciseList}>
+                  {preview.map(re => (
+                    <View key={re.id} style={s.exerciseRow}>
+                      <Text style={s.exerciseName} numberOfLines={1}>{re.exercise?.name}</Text>
+                      <Text style={s.exerciseSets}>
+                        {((re as any).sets_config?.rows?.length ?? re.sets ?? 1)}×{re.rep_range ?? '–'}
+                      </Text>
+                    </View>
+                  ))}
+                  {extra > 0 && (
+                    <Text style={s.moreExercises}>+{extra} more exercise{extra > 1 ? 's' : ''}</Text>
+                  )}
+                </View>
+              )}
+            </SRCard>
+          );
+        })()}
+
         {/* 7-day heatmap */}
         <WeekHeatmap sessions={sessions} />
 
@@ -629,6 +703,14 @@ const s = StyleSheet.create({
   moreExercises: { textAlign: 'center', fontSize: 12, color: COLORS.ink3, fontWeight: '600', paddingVertical: 8 },
   startBtn: { backgroundColor: COLORS.ink, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   startBtnTxt: { color: COLORS.bg, fontWeight: '800', fontSize: 16 },
+
+  // Next workout card
+  nextCard:        { padding: 16, gap: 10, borderColor: `${COLORS.primary}25`, borderWidth: 1 },
+  nextHeader:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  nextLabel:       { fontSize: 10, fontWeight: '800', color: COLORS.primary, letterSpacing: 1 },
+  nextDay:         { fontSize: 20, fontWeight: '900', color: COLORS.ink, marginTop: 2 },
+  nextSeeAll:      { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+  nextRoutineName: { fontSize: 15, fontWeight: '700', color: COLORS.ink2 },
 
   heatmapCard: { padding: 16 },
   heatmapHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
