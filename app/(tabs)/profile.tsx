@@ -582,29 +582,49 @@ interface CalSession {
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+type StatFilter = 'W' | 'M' | '3M';
+
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function CalendarTab() {
   const { user } = useUserStore();
   const today = new Date();
-  const [displayYear, setDisplayYear] = useState(today.getFullYear());
-  const [displayMonth, setDisplayMonth] = useState(today.getMonth()); // 0-indexed
-  const [calSessions, setCalSessions] = useState<CalSession[]>([]);
-  const [calLoading, setCalLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>(today.toISOString().slice(0, 10));
+  const todayIso = localDateStr(today);
+
+  const [displayYear, setDisplayYear]   = useState(today.getFullYear());
+  const [displayMonth, setDisplayMonth] = useState(today.getMonth());
+  const [calSessions, setCalSessions]   = useState<CalSession[]>([]);
+  const [trainingDays, setTrainingDays] = useState<Set<number>>(new Set()); // weekdays with routine
+  const [calLoading, setCalLoading]     = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
+  const [filter, setFilter]             = useState<StatFilter>('M');
 
   useEffect(() => {
     if (!user) { setCalLoading(false); return; }
     let cancelled = false;
     setCalLoading(true);
     (async () => {
-      const { data } = await supabase
-        .from('workout_sessions')
-        .select('id, started_at, routine_name, duration_seconds')
-        .eq('user_id', user.id)
-        .is('deleted_at', null)
-        .not('finished_at', 'is', null)
-        .order('started_at', { ascending: false })
-        .limit(500);
-      if (!cancelled) { setCalSessions((data ?? []) as CalSession[]); setCalLoading(false); }
+      const [sessionsRes, scheduleRes] = await Promise.all([
+        supabase
+          .from('workout_sessions')
+          .select('id, started_at, routine_name, duration_seconds')
+          .eq('user_id', user.id)
+          .is('deleted_at', null)
+          .not('finished_at', 'is', null)
+          .order('started_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('weekly_schedule')
+          .select('weekday')
+          .eq('user_id', user.id),
+      ]);
+      if (!cancelled) {
+        setCalSessions((sessionsRes.data ?? []) as CalSession[]);
+        setTrainingDays(new Set((scheduleRes.data ?? []).map((r: any) => r.weekday)));
+        setCalLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -620,14 +640,46 @@ function CalendarTab() {
     else setDisplayMonth(m => m + 1);
   };
 
-  const trainedDates = useMemo(() => new Set(calSessions.map(s => s.started_at.slice(0, 10))), [calSessions]);
+  const trainedDates = useMemo(() =>
+    new Set(calSessions.map(s => localDateStr(new Date(s.started_at)))),
+  [calSessions]);
 
-  // Build calendar grid for displayed month
+  // For a past date: trained | rest | missed
+  const dayType = (iso: string): 'trained' | 'rest' | 'missed' | 'future' => {
+    const d = new Date(iso);
+    if (d > today) return 'future';
+    if (trainedDates.has(iso)) return 'trained';
+    const wd = d.getDay(); // 0=Sun
+    return trainingDays.has(wd) ? 'missed' : 'rest';
+  };
+
+  // Stats for selected filter range
+  const stats = useMemo(() => {
+    const now = new Date();
+    let from: Date;
+    if (filter === 'W') {
+      from = new Date(now); from.setDate(now.getDate() - 6);
+    } else if (filter === 'M') {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      from = new Date(now); from.setDate(now.getDate() - 89);
+    }
+    let workouts = 0, rest = 0, missed = 0;
+    for (let d = new Date(from); d <= now; d.setDate(d.getDate() + 1)) {
+      const iso = localDateStr(new Date(d));
+      const t = dayType(iso);
+      if (t === 'trained') workouts++;
+      else if (t === 'rest') rest++;
+      else if (t === 'missed') missed++;
+    }
+    return { workouts, rest, missed };
+  }, [filter, trainedDates, trainingDays]);
+
+  // Build calendar grid
   const grid = useMemo(() => {
     const firstDay = new Date(displayYear, displayMonth, 1);
-    const lastDay = new Date(displayYear, displayMonth + 1, 0);
-    // getDay: 0=Sun → map to Mon-first: Mon=0...Sun=6
-    const startDow = (firstDay.getDay() + 6) % 7;
+    const lastDay  = new Date(displayYear, displayMonth + 1, 0);
+    const startDow = (firstDay.getDay() + 6) % 7; // Mon=0
     const rows: (number | null)[][] = [];
     let row: (number | null)[] = Array(startDow).fill(null);
     for (let d = 1; d <= lastDay.getDate(); d++) {
@@ -638,49 +690,64 @@ function CalendarTab() {
     return rows;
   }, [displayYear, displayMonth]);
 
-  // Streak and rest days in the current week of selectedDate
-  const { weekStreak, weekRest } = useMemo(() => {
-    const selD = new Date(selectedDate);
-    const dow = (selD.getDay() + 6) % 7; // Mon=0
-    let trained = 0, rest = 0;
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(selD);
-      d.setDate(selD.getDate() - dow + i);
-      if (d > today) break;
-      const iso = d.toISOString().slice(0, 10);
-      trainedDates.has(iso) ? trained++ : rest++;
-    }
-    return { weekStreak: trained, weekRest: rest };
-  }, [selectedDate, trainedDates]);
-
-  // Sessions for the week containing selectedDate
+  // Sessions for week containing selectedDate
   const weekSessions = useMemo(() => {
     const selD = new Date(selectedDate);
-    const dow = (selD.getDay() + 6) % 7;
-    const weekStart = new Date(selD);
-    weekStart.setDate(selD.getDate() - dow);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    const ws = weekStart.toISOString().slice(0, 10);
-    const we = weekEnd.toISOString().slice(0, 10);
-    return calSessions.filter(s => s.started_at.slice(0, 10) >= ws && s.started_at.slice(0, 10) <= we);
+    const dow  = (selD.getDay() + 6) % 7;
+    const ws   = new Date(selD); ws.setDate(selD.getDate() - dow);
+    const we   = new Date(ws);   we.setDate(ws.getDate() + 6);
+    const wsIso = localDateStr(ws); const weIso = localDateStr(we);
+    return calSessions.filter(s => {
+      const d = localDateStr(new Date(s.started_at));
+      return d >= wsIso && d <= weIso;
+    });
   }, [selectedDate, calSessions]);
 
   const monthLabel = new Date(displayYear, displayMonth, 1)
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  if (calLoading) {
-    return <View style={ct.loadWrap}><ActivityIndicator color={COLORS.blue} size="large" /></View>;
-  }
-
-  const monthHasSessions = calSessions.some(s => {
-    const d = new Date(s.started_at);
-    return d.getFullYear() === displayYear && d.getMonth() === displayMonth;
-  });
+  if (calLoading) return <View style={ct.loadWrap}><ActivityIndicator color={COLORS.blue} size="large" /></View>;
 
   return (
     <ScrollView contentContainerStyle={ct.scroll} showsVerticalScrollIndicator={false}>
-      {/* Month nav header */}
+
+      {/* Time filter */}
+      <View style={ct.filterRow}>
+        {(['W','M','3M'] as StatFilter[]).map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[ct.filterBtn, filter === f && ct.filterBtnActive]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[ct.filterTxt, filter === f && ct.filterTxtActive]}>
+              {f === 'W' ? 'This Week' : f === 'M' ? 'This Month' : 'Last 3 Months'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Stats row */}
+      <SRCard style={ct.statsRow}>
+        <View style={ct.statItem}>
+          <View style={[ct.statDot, { backgroundColor: COLORS.blue }]} />
+          <Text style={ct.statVal}>{stats.workouts}</Text>
+          <Text style={ct.statLab}>Workouts</Text>
+        </View>
+        <View style={ct.statDivider} />
+        <View style={ct.statItem}>
+          <View style={[ct.statDot, { backgroundColor: COLORS.amber }]} />
+          <Text style={ct.statVal}>{stats.rest}</Text>
+          <Text style={ct.statLab}>Rest Days</Text>
+        </View>
+        <View style={ct.statDivider} />
+        <View style={ct.statItem}>
+          <View style={[ct.statDot, { backgroundColor: COLORS.red }]} />
+          <Text style={ct.statVal}>{stats.missed}</Text>
+          <Text style={ct.statLab}>Missed</Text>
+        </View>
+      </SRCard>
+
+      {/* Month nav */}
       <View style={ct.monthNav}>
         <TouchableOpacity onPress={prevMonth} hitSlop={12} style={ct.navBtn}>
           <Ionicons name="chevron-back" size={20} color={COLORS.ink} />
@@ -691,12 +758,19 @@ function CalendarTab() {
         </TouchableOpacity>
       </View>
 
-      {/* Week summary */}
-      <SRCard style={ct.summaryCard}>
-        <Text style={ct.summaryText}>
-          {weekStreak > 0 ? `${weekStreak} 🔥 sessions` : 'No sessions'} · {weekRest} rest day{weekRest !== 1 ? 's' : ''} this week
-        </Text>
-      </SRCard>
+      {/* Legend */}
+      <View style={ct.legend}>
+        {[
+          { color: COLORS.blue,    label: 'Trained' },
+          { color: COLORS.amber,   label: 'Rest' },
+          { color: COLORS.red+'99', label: 'Missed' },
+        ].map(l => (
+          <View key={l.label} style={ct.legendItem}>
+            <View style={[ct.legendDot, { backgroundColor: l.color }]} />
+            <Text style={ct.legendTxt}>{l.label}</Text>
+          </View>
+        ))}
+      </View>
 
       {/* Calendar grid */}
       <SRCard style={ct.gridCard}>
@@ -707,23 +781,29 @@ function CalendarTab() {
           <View key={wi} style={ct.weekRow}>
             {week.map((day, di) => {
               if (day === null) return <View key={di} style={ct.dayCell} />;
-              const iso = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const trained = trainedDates.has(iso);
-              const isToday = iso === today.toISOString().slice(0, 10);
+              const iso = `${displayYear}-${String(displayMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+              const type = dayType(iso);
+              const isToday    = iso === todayIso;
               const isSelected = iso === selectedDate;
               return (
                 <TouchableOpacity
                   key={di}
                   style={[
                     ct.dayCell,
-                    trained && ct.dayCellTrained,
-                    isToday && !trained && ct.dayCellToday,
-                    isSelected && ct.dayCellSelected,
+                    type === 'trained' && ct.dayCellTrained,
+                    type === 'rest'    && ct.dayCellRest,
+                    type === 'missed'  && ct.dayCellMissed,
+                    isToday            && ct.dayCellToday,
+                    isSelected         && ct.dayCellSelected,
                   ]}
                   onPress={() => setSelectedDate(iso)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[ct.dayNum, trained && ct.dayNumTrained, isToday && !trained && { color: COLORS.blue }]}>
+                  <Text style={[
+                    ct.dayNum,
+                    (type === 'trained' || type === 'missed') && ct.dayNumOnColor,
+                    isToday && type === 'future' && { color: COLORS.blue },
+                  ]}>
                     {day}
                   </Text>
                 </TouchableOpacity>
@@ -734,16 +814,16 @@ function CalendarTab() {
       </SRCard>
 
       {/* Weekly session list */}
-      {weekSessions.length > 0 ? (
+      {weekSessions.length > 0 && (
         <SRCard>
-          <SRSectionLabel>This Week's Sessions</SRSectionLabel>
+          <SRSectionLabel>Sessions This Week</SRSectionLabel>
           {weekSessions.map((s, i) => (
             <View key={s.id}>
               {i > 0 && <SRDivider indent={16} />}
               <View style={ct.sessionRow}>
                 <View style={ct.sessionDot} />
                 <View style={{ flex: 1 }}>
-                  <Text style={ct.sessionName}>{s.routine_name ?? 'Quick Workout'}</Text>
+                  <Text style={ct.sessionName}>{s.routine_name ?? 'Workout'}</Text>
                   <Text style={ct.sessionDate}>
                     {new Date(s.started_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </Text>
@@ -755,13 +835,8 @@ function CalendarTab() {
             </View>
           ))}
         </SRCard>
-      ) : !monthHasSessions ? (
-        <View style={ct.empty}>
-          <Text style={ct.emptyIcon}>📅</Text>
-          <Text style={ct.emptyTitle}>No sessions this month</Text>
-          <Text style={ct.emptySub}>Start training to see your calendar fill up.</Text>
-        </View>
-      ) : null}
+      )}
+
     </ScrollView>
   );
 }
@@ -769,9 +844,33 @@ function CalendarTab() {
 const ct = StyleSheet.create({
   loadWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingHorizontal: 14, paddingBottom: 120, paddingTop: 14, gap: 10 },
+
+  // ── Filter bar ──
+  filterRow: { flexDirection: 'row', gap: 8 },
+  filterBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.surface2, alignItems: 'center' },
+  filterBtnActive: { backgroundColor: COLORS.blue },
+  filterTxt: { fontSize: 13, fontWeight: '600', color: COLORS.ink3 },
+  filterTxtActive: { color: COLORS.bg, fontWeight: '700' },
+
+  // ── Stats summary row ──
+  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 14, paddingHorizontal: 8 },
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  statDot: { width: 10, height: 10, borderRadius: 99 },
+  statVal: { fontSize: 20, fontWeight: '900', color: COLORS.ink },
+  statLab: { fontSize: 11, color: COLORS.ink3, fontWeight: '600' },
+  statDivider: { width: StyleSheet.hairlineWidth, height: 32, backgroundColor: COLORS.border },
+
+  // ── Month nav ──
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   navBtn: { padding: 4 },
   monthLabel: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
+
+  // ── Legend ──
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 10, height: 10, borderRadius: 99 },
+  legendTxt: { fontSize: 12, color: COLORS.ink3, fontWeight: '600' },
+
   summaryCard: { padding: 12, alignItems: 'center' },
   summaryText: { fontSize: 13, fontWeight: '600', color: COLORS.ink2 },
   gridCard: { padding: 12 },
@@ -780,10 +879,13 @@ const ct = StyleSheet.create({
   weekRow: { flexDirection: 'row', marginBottom: 5 },
   dayCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
   dayCellTrained: { backgroundColor: COLORS.blue },
+  dayCellRest: { backgroundColor: COLORS.amber },
+  dayCellMissed: { backgroundColor: COLORS.red },
   dayCellToday: { borderWidth: 1.5, borderColor: COLORS.blue },
   dayCellSelected: { borderWidth: 1.5, borderColor: COLORS.ink3 },
   dayNum: { fontSize: 13, fontWeight: '500', color: COLORS.ink },
   dayNumTrained: { color: COLORS.bg, fontWeight: '700' },
+  dayNumOnColor: { color: COLORS.bg, fontWeight: '700' },
   sessionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11 },
   sessionDot: { width: 8, height: 8, borderRadius: 99, backgroundColor: COLORS.blue },
   sessionName: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
