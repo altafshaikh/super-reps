@@ -3,16 +3,26 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, FlatList, Modal, ActivityIndicator, Platform, StyleSheet,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
-import { formatWeight } from '@/lib/utils';
+import { formatWeight, formatDurationClock } from '@/lib/utils';
 import { generateId } from '@/lib/utils';
 import { COLORS } from '@/constants';
 import { ExerciseLibraryModal } from '@/components/workouts/ExerciseLibraryModal';
 import type { Exercise } from '@/types';
+
+type PickerMode = 'date' | 'time' | null;
+
+function formatWhen(date: Date): string {
+  return date.toLocaleString('en-US', {
+    day: 'numeric', month: 'long', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+}
 
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 
@@ -43,6 +53,14 @@ export default function EditWorkoutScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
 
   const [routineName, setRoutineName] = useState('');
+  const [when, setWhen] = useState<Date>(new Date());
+  const [durationSecs, setDurationSecs] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
+  const [showDurationEditor, setShowDurationEditor] = useState(false);
+  const [draftH, setDraftH] = useState('0');
+  const [draftM, setDraftM] = useState('0');
+  const [draftS, setDraftS] = useState('0');
   const [exercises, setExercises] = useState<EditExercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,10 +75,15 @@ export default function EditWorkoutScreen() {
     setLoading(true);
     const { data: session } = await supabase
       .from('workout_sessions')
-      .select('routine_name')
+      .select('routine_name, started_at, duration_seconds, notes')
       .eq('id', sessionId)
       .single();
-    if (session) setRoutineName(session.routine_name ?? 'Workout');
+    if (session) {
+      setRoutineName(session.routine_name ?? 'Workout');
+      setWhen(session.started_at ? new Date(session.started_at) : new Date());
+      setDurationSecs(Number(session.duration_seconds) || 0);
+      setNotes(session.notes ?? '');
+    }
 
     const { data: sets } = await supabase
       .from('workout_sets')
@@ -187,14 +210,39 @@ export default function EditWorkoutScreen() {
       await supabase.from('workout_sets').upsert(toUpsert, { onConflict: 'id' });
     }
 
-    // Recalculate volume_total
+    // Recalculate volume_total and update session metadata
     const volume = toUpsert.reduce((sum, s) => sum + s.weight_kg * s.reps, 0);
     await supabase.from('workout_sessions')
-      .update({ volume_total: volume })
+      .update({
+        volume_total: volume,
+        started_at: when.toISOString(),
+        duration_seconds: durationSecs,
+        notes: notes.trim() || null,
+      })
       .eq('id', sessionId);
 
     setSaving(false);
     router.back();
+  };
+
+  const onDateChange = (_: any, date?: Date) => {
+    if (!date) { setPickerMode(null); return; }
+    setWhen(prev => {
+      const next = new Date(prev);
+      next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+      return next;
+    });
+    if (Platform.OS === 'android') setPickerMode('time');
+  };
+
+  const onTimeChange = (_: any, date?: Date) => {
+    setPickerMode(null);
+    if (!date) return;
+    setWhen(prev => {
+      const next = new Date(prev);
+      next.setHours(date.getHours(), date.getMinutes());
+      return next;
+    });
   };
 
   const handleCancel = () => {
@@ -231,6 +279,37 @@ export default function EditWorkoutScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* Session metadata */}
+        <View style={s.metaCard}>
+          <TouchableOpacity style={s.metaRow} onPress={() => setPickerMode('date')} activeOpacity={0.7}>
+            <Text style={s.metaLabel}>When</Text>
+            <Text style={s.metaValueBlue}>{formatWhen(when)}</Text>
+          </TouchableOpacity>
+          <View style={s.metaDivider} />
+          <TouchableOpacity style={s.metaRow} onPress={() => {
+            setDraftH(String(Math.floor(durationSecs / 3600)));
+            setDraftM(String(Math.floor((durationSecs % 3600) / 60)));
+            setDraftS(String(durationSecs % 60));
+            setShowDurationEditor(true);
+          }} activeOpacity={0.7}>
+            <Text style={s.metaLabel}>Duration</Text>
+            <Text style={s.metaValueBlue}>{formatDurationClock(durationSecs)}</Text>
+          </TouchableOpacity>
+          <View style={s.metaDivider} />
+          <View style={s.metaRow}>
+            <Text style={s.metaLabel}>Notes</Text>
+            <TextInput
+              style={s.notesInput}
+              placeholder="How did it go?"
+              placeholderTextColor={COLORS.ink4}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+        </View>
+
         {visibleExercises.map(ex => {
           const visibleSets = ex.sets.filter(s => !s.deleted);
           return (
@@ -289,6 +368,79 @@ export default function EditWorkoutScreen() {
         onClose={() => setShowPicker(false)}
         onAddExercise={addExercise}
       />
+
+      {/* Date/time pickers */}
+      {pickerMode === 'date' && Platform.OS === 'ios' && (
+        <View style={[s.pickerSheet, { paddingBottom: insets.bottom }]}>
+          <View style={s.pickerToolbar}>
+            <TouchableOpacity onPress={() => setPickerMode(null)}>
+              <Text style={s.pickerCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setPickerMode('time')}>
+              <Text style={s.pickerDone}>Next →</Text>
+            </TouchableOpacity>
+          </View>
+          <DateTimePicker value={when} mode="date" display="spinner" onChange={onDateChange} themeVariant="dark" />
+        </View>
+      )}
+      {pickerMode === 'time' && Platform.OS === 'ios' && (
+        <View style={[s.pickerSheet, { paddingBottom: insets.bottom }]}>
+          <View style={s.pickerToolbar}>
+            <TouchableOpacity onPress={() => setPickerMode('date')}>
+              <Text style={s.pickerCancel}>← Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setPickerMode(null)}>
+              <Text style={s.pickerDone}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <DateTimePicker value={when} mode="time" display="spinner" onChange={onTimeChange} themeVariant="dark" />
+        </View>
+      )}
+      {pickerMode === 'date' && Platform.OS === 'android' && (
+        <DateTimePicker value={when} mode="date" display="default" onChange={onDateChange} />
+      )}
+      {pickerMode === 'time' && Platform.OS === 'android' && (
+        <DateTimePicker value={when} mode="time" display="default" onChange={onTimeChange} />
+      )}
+
+      {/* Duration editor */}
+      <Modal visible={showDurationEditor} transparent animationType="fade" onRequestClose={() => setShowDurationEditor(false)}>
+        <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={() => setShowDurationEditor(false)}>
+          <TouchableOpacity activeOpacity={1} style={s.durationModal}>
+            <Text style={s.durationModalTitle}>Edit Duration</Text>
+            <View style={s.durationFields}>
+              <View style={s.durationField}>
+                <TextInput style={s.durationInput} keyboardType="number-pad" value={draftH} onChangeText={setDraftH} maxLength={2} selectTextOnFocus />
+                <Text style={s.durationUnit}>h</Text>
+              </View>
+              <Text style={s.durationColon}>:</Text>
+              <View style={s.durationField}>
+                <TextInput style={s.durationInput} keyboardType="number-pad" value={draftM} onChangeText={setDraftM} maxLength={2} selectTextOnFocus />
+                <Text style={s.durationUnit}>m</Text>
+              </View>
+              <Text style={s.durationColon}>:</Text>
+              <View style={s.durationField}>
+                <TextInput style={s.durationInput} keyboardType="number-pad" value={draftS} onChangeText={setDraftS} maxLength={2} selectTextOnFocus />
+                <Text style={s.durationUnit}>s</Text>
+              </View>
+            </View>
+            <View style={s.durationActions}>
+              <TouchableOpacity style={s.durationCancel} onPress={() => setShowDurationEditor(false)}>
+                <Text style={s.durationCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.durationConfirm} onPress={() => {
+                const h = Math.max(0, parseInt(draftH) || 0);
+                const m = Math.min(59, Math.max(0, parseInt(draftM) || 0));
+                const sec = Math.min(59, Math.max(0, parseInt(draftS) || 0));
+                setDurationSecs(h * 3600 + m * 60 + sec);
+                setShowDurationEditor(false);
+              }}>
+                <Text style={s.durationConfirmTxt}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -443,4 +595,67 @@ const s = StyleSheet.create({
   },
   pickerExName: { fontSize: 15, fontWeight: '600', color: COLORS.ink },
   pickerExMeta: { fontSize: 12, color: COLORS.ink3, marginTop: 2 },
+
+  // Session metadata card
+  metaCard: {
+    backgroundColor: COLORS.surface, borderRadius: 16,
+    borderWidth: 0.5, borderColor: COLORS.border,
+    overflow: 'hidden', marginBottom: 4,
+  },
+  metaRow: { paddingHorizontal: 16, paddingVertical: 14 },
+  metaLabel: { color: COLORS.ink3, fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  metaValueBlue: { color: COLORS.blue, fontSize: 15, fontWeight: '500' },
+  metaDivider: { height: 0.5, backgroundColor: COLORS.border },
+  notesInput: {
+    color: COLORS.ink, fontSize: 14, lineHeight: 20,
+    minHeight: 56, marginTop: 2,
+  },
+
+  // Date/time picker sheet
+  pickerSheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 0.5, borderTopColor: COLORS.border,
+  },
+  pickerToolbar: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4,
+  },
+  pickerCancel: { color: COLORS.ink2, fontSize: 16, fontWeight: '500' },
+  pickerDone: { color: COLORS.blue, fontWeight: '700', fontSize: 16 },
+
+  // Duration modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  durationModal: {
+    backgroundColor: COLORS.surface, borderRadius: 20,
+    paddingHorizontal: 24, paddingVertical: 24, width: 300,
+  },
+  durationModalTitle: {
+    color: COLORS.ink, fontWeight: '700', fontSize: 17,
+    textAlign: 'center', marginBottom: 20,
+  },
+  durationFields: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  durationField: { alignItems: 'center', gap: 4 },
+  durationInput: {
+    backgroundColor: COLORS.surface2, color: COLORS.ink,
+    fontWeight: '700', fontSize: 26, textAlign: 'center',
+    width: 62, borderRadius: 10, paddingVertical: 10,
+    borderWidth: 0.5, borderColor: COLORS.border,
+  },
+  durationUnit: { color: COLORS.ink3, fontSize: 12, fontWeight: '600' },
+  durationColon: { color: COLORS.ink2, fontSize: 24, fontWeight: '700', marginBottom: 16 },
+  durationActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  durationCancel: {
+    flex: 1, backgroundColor: COLORS.surface2, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  durationCancelTxt: { color: COLORS.ink2, fontWeight: '600', fontSize: 15 },
+  durationConfirm: {
+    flex: 1, backgroundColor: COLORS.blue, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  durationConfirmTxt: { color: 'white', fontWeight: '700', fontSize: 15 },
 });
