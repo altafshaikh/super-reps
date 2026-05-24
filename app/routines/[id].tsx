@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
-  StyleSheet, useWindowDimensions,
+  View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
+  StyleSheet, useWindowDimensions, Modal, Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +43,9 @@ export default function RoutineDetailScreen() {
   const [sessions, setSessions]       = useState<SessionSummary[]>([]);
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState<MetricTab>('Volume');
+  const [showMenu, setShowMenu]       = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]       = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -72,22 +75,17 @@ export default function RoutineDetailScreen() {
     })();
   }, [id]);
 
-  const handleDelete = () => {
-    Alert.alert('Delete Routine', `Delete "${routine?.name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        await supabase.from('routines').delete().eq('id', id);
-        router.back();
-      }},
-    ]);
+  const handleDelete = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setDeleting(true);
+    await supabase.from('routines').delete().eq('id', id);
+    setShowMenu(false);
+    router.replace('/(tabs)/routines');
   };
 
   const handleMore = () => {
-    Alert.alert('Options', undefined, [
-      { text: 'Edit Routine', onPress: () => router.push(`/routines/edit/${id}` as any) },
-      { text: 'Delete Routine', style: 'destructive', onPress: handleDelete },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setConfirmDelete(false);
+    setShowMenu(true);
   };
 
   const handleStart = () => {
@@ -262,6 +260,28 @@ export default function RoutineDetailScreen() {
 
         <View style={{ height: 60 }} />
       </ScrollView>
+
+      {/* ── Options bottom sheet ── */}
+      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={() => setShowMenu(false)}>
+        <Pressable style={m.backdrop} onPress={() => setShowMenu(false)} />
+        <View style={m.sheet}>
+          <View style={m.handle} />
+          <TouchableOpacity style={m.row} onPress={() => { setShowMenu(false); router.push(`/routines/edit/${id}` as any); }}>
+            <Ionicons name="create-outline" size={22} color={COLORS.ink} />
+            <Text style={m.rowTxt}>Edit Routine</Text>
+          </TouchableOpacity>
+          <View style={m.sep} />
+          <TouchableOpacity style={m.row} onPress={handleDelete} disabled={deleting}>
+            {deleting
+              ? <ActivityIndicator size="small" color={COLORS.red} />
+              : <Ionicons name="trash-outline" size={22} color={COLORS.red} />
+            }
+            <Text style={[m.rowTxt, { color: COLORS.red }]}>
+              {confirmDelete ? 'Tap again to confirm delete' : 'Delete Routine'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -356,4 +376,19 @@ const s = StyleSheet.create({
   colVal:  { fontSize: 16, fontWeight: '700', color: COLORS.ink },
   colDim:  { color: COLORS.ink3 },
 
+});
+
+const m = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 40, paddingTop: 12,
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.surface2, alignSelf: 'center', marginBottom: 16,
+  },
+  row:    { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 18, paddingHorizontal: 24 },
+  rowTxt: { fontSize: 16, color: COLORS.ink, fontWeight: '500' },
+  sep:    { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.surface2, marginLeft: 60 },
 });

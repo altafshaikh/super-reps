@@ -134,11 +134,12 @@ export default function EditRoutineScreen() {
   const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
   const [name, setName]                   = useState('');
+  const [saveError, setSaveError]         = useState('');
   const [scheduledDays, setScheduledDays] = useState<number[]>([]);
   const [exercises, setExercises]         = useState<EditableExercise[]>([]);
   const [menuFor, setMenuFor]             = useState<string | null>(null);
   const [showPicker, setShowPicker]       = useState(false);
-  const [replaceFor, setReplaceFor]       = useState<string | null>(null); // exercise id to replace
+  const [replaceFor, setReplaceFor]       = useState<string | null>(null);
   const [dayId, setDayId]                 = useState<string | null>(null);
 
   useEffect(() => {
@@ -229,6 +230,7 @@ export default function EditRoutineScreen() {
       .single();
 
     if (data) {
+      setSaveError('');
       setExercises(prev => [...prev, {
         id:             data.id,
         exercise_id:    exercise.id,
@@ -244,7 +246,10 @@ export default function EditRoutineScreen() {
   };
 
   const handleSave = async () => {
-    if (!name.trim()) { Alert.alert('Name required'); return; }
+    if (!name.trim()) { setSaveError('Routine name is required'); return; }
+    const activeCount = exercises.filter(ex => !ex.removed).length;
+    if (activeCount === 0) { setSaveError('Add at least one exercise before saving'); return; }
+    setSaveError('');
     setSaving(true);
 
     const active  = exercises.filter(ex => !ex.removed);
@@ -323,11 +328,16 @@ export default function EditRoutineScreen() {
         <TextInput
           style={s.routineName}
           value={name}
-          onChangeText={setName}
+          onChangeText={v => { setName(v); setSaveError(''); }}
           placeholder="Routine name"
           placeholderTextColor={COLORS.ink3}
           returnKeyType="done"
         />
+        {!!saveError && (
+          <Text style={{ color: COLORS.red, fontSize: 13, paddingHorizontal: 16, marginBottom: 8 }}>
+            {saveError}
+          </Text>
+        )}
 
         {/* ── Weekday scheduler ── */}
         <View style={s.weekdaySection}>

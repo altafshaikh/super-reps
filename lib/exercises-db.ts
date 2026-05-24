@@ -1059,6 +1059,24 @@ const FOREARMS: ExerciseEntry[] = [
     equipment: ['dumbbells'],
     type: 'weight_duration',
   },
+  {
+    name: 'Dead Hang',
+    slug: 'dead_hang',
+    aliases: ['bar hang', 'passive hang', 'hang hold', 'dead hang hold', 'grip hang', 'straight arm hang'],
+    primary: ['forearms'],
+    secondary: ['lats', 'traps'],
+    equipment: ['pullup_bar'],
+    type: 'duration',
+  },
+  {
+    name: 'Weighted Dead Hang',
+    slug: 'weighted_dead_hang',
+    aliases: ['weighted hang', 'dead hang weighted', 'dead hang with weight', 'loaded dead hang', 'weighted bar hang'],
+    primary: ['forearms'],
+    secondary: ['lats', 'traps'],
+    equipment: ['pullup_bar'],
+    type: 'weight_duration',
+  },
 ];
 
 // ─── FULL BODY / COMPOUND ─────────────────────────────────────────────────────

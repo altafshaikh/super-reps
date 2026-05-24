@@ -30,10 +30,12 @@ import type { Exercise, ActiveSet } from '@/types';
 const GREEN_ROW = '#1B6B40';
 const BLUE_ACCENT = '#0070FF';
 
-function getExerciseDisplayType(exercise: Exercise): 'weight_reps' | 'bodyweight_reps' | 'duration' {
+function getExerciseDisplayType(exercise: Exercise): 'weight_reps' | 'bodyweight_reps' | 'duration' | 'weight_duration' {
   const et = exercise.exercise_type ?? '';
-  const timedSlugs = new Set(['plank', 'side_plank', 'jump_rope', 'stair_climber', 'warm_up', 'stretching']);
-  if (et === 'duration' || et === 'distance_duration' || et === 'weight_duration' || timedSlugs.has(exercise.slug)) {
+  const timedSlugs = new Set(['plank', 'side_plank', 'jump_rope', 'stair_climber', 'warm_up', 'stretching', 'dead_hang', 'dead_hang_ywm41lsl']);
+  const weightedDurationSlugs = new Set(['farmer_carry', 'weighted_dead_hang']);
+  if (et === 'weight_duration' || weightedDurationSlugs.has(exercise.slug)) return 'weight_duration';
+  if (et === 'duration' || et === 'distance_duration' || timedSlugs.has(exercise.slug)) {
     return 'duration';
   }
   if (et === 'bodyweight_reps') return 'bodyweight_reps';
@@ -250,7 +252,7 @@ function InlineSetRow({
   set: ActiveSet;
   index: number;
   exerciseId: string;
-  displayType: 'weight_reps' | 'bodyweight_reps' | 'duration';
+  displayType: 'weight_reps' | 'bodyweight_reps' | 'duration' | 'weight_duration';
   prevWeight: number | null;
   prevReps: number | null;
   prevDuration: number | null;
@@ -297,6 +299,14 @@ function InlineSetRow({
       const mm = String(Math.floor(prevDuration / 60)).padStart(2, '0');
       const ss = String(prevDuration % 60).padStart(2, '0');
       return `${mm}:${ss}`;
+    }
+    if (displayType === 'weight_duration') {
+      const timePart = prevDuration != null
+        ? `${String(Math.floor(prevDuration / 60)).padStart(2, '0')}:${String(prevDuration % 60).padStart(2, '0')}`
+        : null;
+      if (prevWeight != null && timePart != null) return `${formatWeight(prevWeight)} ${timePart}`;
+      if (timePart != null) return timePart;
+      return '—';
     }
     if (displayType === 'bodyweight_reps') {
       return prevReps != null ? `× ${prevReps}` : '—';
@@ -366,6 +376,26 @@ function InlineSetRow({
             onToggle={() => setTimerRunning(r => !r)}
             onUpdate={sec => onUpdate(exerciseId, set.id, { duration_seconds: sec })}
           />
+        )}
+
+        {displayType === 'weight_duration' && (
+          <>
+            <TextInput
+              style={[s.setInput, set.completed && s.setInputDone]}
+              keyboardType="decimal-pad"
+              value={set.weight_kg > 0 ? formatWeight(set.weight_kg) : ''}
+              placeholder="kg"
+              placeholderTextColor={COLORS.ink4}
+              onChangeText={v => onUpdate(exerciseId, set.id, { weight_kg: parseFloat(v) || 0 })}
+              editable={!set.completed}
+            />
+            <DurationCell
+              value={set.duration_seconds ?? 0}
+              isRunning={timerRunning && !set.completed}
+              onToggle={() => setTimerRunning(r => !r)}
+              onUpdate={sec => onUpdate(exerciseId, set.id, { duration_seconds: sec })}
+            />
+          </>
         )}
 
         {/* Checkmark */}
@@ -753,6 +783,12 @@ export default function ActiveWorkoutScreen() {
                       )}
                       {displayType === 'duration' && (
                         <Text style={[s.colHdr, s.colHdrInputWide]}>TIME</Text>
+                      )}
+                      {displayType === 'weight_duration' && (
+                        <>
+                          <Text style={[s.colHdr, s.colHdrInput]}>↔ KG</Text>
+                          <Text style={[s.colHdr, s.colHdrInput]}>TIME</Text>
+                        </>
                       )}
                       <Text style={[s.colHdr, { width: 44, textAlign: 'center' }]}>✓</Text>
                     </View>

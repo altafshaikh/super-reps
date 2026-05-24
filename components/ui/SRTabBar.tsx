@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { House } from 'phosphor-react-native/src/icons/House';
 import { Barbell } from 'phosphor-react-native/src/icons/Barbell';
@@ -30,6 +30,8 @@ function MinimizedWorkoutBar() {
   const router = useRouter();
   const { routineName, startedAt, expandWorkout, resetWorkout } = useWorkoutStore();
   const [elapsed, setElapsed] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -38,36 +40,62 @@ function MinimizedWorkoutBar() {
     return () => clearInterval(tick);
   }, [startedAt]);
 
+  useEffect(() => {
+    return () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); };
+  }, []);
+
   const handleExpand = () => {
     expandWorkout();
     router.push('/workout/active');
   };
 
-  const handleDiscard = () => {
-    Alert.alert('Discard Workout?', 'This workout will not be saved.', [
-      { text: 'Keep Going', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: resetWorkout },
-    ]);
+  const handleTrashPress = () => {
+    if (confirming) {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      resetWorkout();
+    } else {
+      setConfirming(true);
+      confirmTimer.current = setTimeout(() => setConfirming(false), 3000);
+    }
+  };
+
+  const handleCancelDiscard = () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirming(false);
   };
 
   return (
     <View style={mStyles.bar}>
-      <TouchableOpacity style={mStyles.expandBtn} onPress={handleExpand} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="chevron-up" size={20} color={COLORS.ink2} />
-      </TouchableOpacity>
-      <TouchableOpacity style={mStyles.center} onPress={handleExpand} activeOpacity={0.7}>
-        <View style={mStyles.titleRow}>
-          <View style={mStyles.greenDot} />
-          <Text style={mStyles.workoutLabel}>Workout</Text>
-          <Text style={mStyles.elapsed}>{formatDuration(elapsed)}</Text>
-        </View>
-        <Text style={mStyles.routineName} numberOfLines={1}>
-          {routineName ?? 'Quick Workout'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={mStyles.discardBtn} onPress={handleDiscard} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="trash-outline" size={20} color={COLORS.red} />
-      </TouchableOpacity>
+      {confirming ? (
+        <>
+          <Text style={mStyles.confirmText}>Discard workout?</Text>
+          <TouchableOpacity style={mStyles.cancelBtn} onPress={handleCancelDiscard}>
+            <Text style={mStyles.cancelBtnText}>Keep</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={mStyles.discardConfirmBtn} onPress={handleTrashPress}>
+            <Text style={mStyles.discardConfirmText}>Discard</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <TouchableOpacity style={mStyles.expandBtn} onPress={handleExpand} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="chevron-up" size={20} color={COLORS.ink2} />
+          </TouchableOpacity>
+          <TouchableOpacity style={mStyles.center} onPress={handleExpand} activeOpacity={0.7}>
+            <View style={mStyles.titleRow}>
+              <View style={mStyles.greenDot} />
+              <Text style={mStyles.workoutLabel}>Workout</Text>
+              <Text style={mStyles.elapsed}>{formatDuration(elapsed)}</Text>
+            </View>
+            <Text style={mStyles.routineName} numberOfLines={1}>
+              {routineName ?? 'Quick Workout'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={mStyles.discardBtn} onPress={handleTrashPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="trash-outline" size={20} color={COLORS.red} />
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
@@ -247,5 +275,36 @@ const mStyles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  confirmText: {
+    color: COLORS.ink2,
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    marginLeft: 10,
+  },
+  cancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginRight: 6,
+  },
+  cancelBtnText: {
+    color: COLORS.ink2,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  discardConfirmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: COLORS.red,
+    marginRight: 6,
+  },
+  discardConfirmText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

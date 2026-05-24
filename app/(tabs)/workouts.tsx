@@ -74,6 +74,7 @@ export default function WorkoutsScreen() {
   const [schedule, setSchedule]       = useState<ScheduleEntry[]>([]);
   const [loading, setLoading]         = useState(true);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [creatingRoutine, setCreatingRoutine] = useState(false);
   // picker: weekday being edited (-1 = pick day first), and which routine is being assigned
   const [pickingDay, setPickingDay]       = useState<number | null>(null);
   const [pickingRoutineId, setPickingRoutineId] = useState<string | null>(null);
@@ -144,6 +145,21 @@ export default function WorkoutsScreen() {
     startWorkout(undefined, 'Quick workout', [{ exercise }]);
     setLibraryOpen(false);
     router.push('/workout/active');
+  };
+
+  const handleAddRoutine = async () => {
+    if (!user || creatingRoutine) return;
+    setCreatingRoutine(true);
+    const { data: routine } = await supabase
+      .from('routines')
+      .insert({ user_id: user.id, name: 'New Routine', created_by_ai: false })
+      .select()
+      .single();
+    if (routine) {
+      await supabase.from('routine_days').insert({ routine_id: routine.id, day_of_week: 1 });
+      router.push(`/routines/edit/${routine.id}`);
+    }
+    setCreatingRoutine(false);
   };
 
   if (isActive) {
@@ -255,8 +271,11 @@ export default function WorkoutsScreen() {
             })}
 
             {/* Add Routine */}
-            <TouchableOpacity style={s.addRoutineBtn} onPress={() => router.navigate('/(tabs)/ai')} activeOpacity={0.8}>
-              <Ionicons name="add" size={20} color={COLORS.blue} />
+            <TouchableOpacity style={s.addRoutineBtn} onPress={handleAddRoutine} disabled={creatingRoutine} activeOpacity={0.8}>
+              {creatingRoutine
+                ? <ActivityIndicator size="small" color={COLORS.blue} />
+                : <Ionicons name="add" size={20} color={COLORS.blue} />
+              }
               <Text style={s.addRoutineTxt}>Add Routine</Text>
             </TouchableOpacity>
           </View>
