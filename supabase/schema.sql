@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS exercises (
   muscle_groups TEXT[] DEFAULT '{}',
   equipment     TEXT[] DEFAULT '{}',
   instructions  TEXT DEFAULT '',
+  exercise_type TEXT,
+  image_url      TEXT,
+  gif_url        TEXT,
+  form_cues      TEXT[] DEFAULT '{}',
+  external_id    TEXT UNIQUE,
   is_custom     BOOLEAN DEFAULT FALSE,
   created_by    UUID REFERENCES users(id),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()

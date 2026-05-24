@@ -86,10 +86,20 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       routineName: routineName ?? null,
       startedAt: new Date(),
       exercises: exercises.map(input => {
-        const setsCount = Math.max(1, input.setsCount ?? 1);
-        const sets = Array.from({ length: setsCount }, (_, i) =>
-          defaultSet(i, input.defaultReps ?? 0)
-        );
+        const copiedSets = input.sets ?? [];
+        const setsCount = Math.max(1, input.setsCount ?? copiedSets.length ?? 1);
+        const sets = copiedSets.length > 0
+          ? copiedSets.map((copied, i) => ({
+              ...defaultSet(i, input.defaultReps ?? 0),
+              set_type: copied.set_type,
+              weight_kg: copied.weight_kg,
+              reps: copied.reps,
+              rpe: copied.rpe,
+              duration_seconds: copied.duration_seconds,
+            }))
+          : Array.from({ length: setsCount }, (_, i) =>
+              defaultSet(i, input.defaultReps ?? 0)
+            );
         return {
           exercise: input.exercise,
           sets,

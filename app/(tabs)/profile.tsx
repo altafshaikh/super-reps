@@ -21,8 +21,9 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
+import { useWorkoutStore } from '@/stores/workoutStore';
 import { COLORS } from '@/constants';
-import type { WorkoutSession, SetLog, PersonalRecord } from '@/types';
+import type { Exercise, WorkoutExerciseInput, WorkoutSession, SetLog, PersonalRecord } from '@/types';
 import { SRCard, SRDivider, SRSectionLabel, SRPill, BarChart, LineChart, ExerciseDetailSheet } from '@/components/ui';
 import { formatWeight, timeAgo } from '@/lib/utils';
 import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
@@ -31,6 +32,7 @@ import { getWeeklyReview } from '@/lib/ai';
 type SetRow = SetLog & { exercise?: { name: string } | null };
 type SessionRow = WorkoutSession & { sets?: SetRow[] };
 type ProfileTab = 'workouts' | 'statistics' | 'measures' | 'exercises' | 'calendar';
+type CopyWorkoutSetRow = SetLog & { exercise: Exercise | null };
 
 const PROFILE_TABS: { id: ProfileTab; label: string }[] = [
   { id: 'workouts',   label: 'Workouts'   },
@@ -1210,6 +1212,16 @@ interface WorkoutsTabProps {
 function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPress }: WorkoutsTabProps) {
   const router = useRouter();
   const { signOut } = useUserStore();
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (sessionId: string) => {
+    setExpandedSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  };
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.tabScrollContent}>
@@ -1244,8 +1256,9 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
           const title = session.routine_name ?? 'Quick Workout';
           const totalReps = sessionTotalReps(session.sets);
           const groups = groupExercises(session.sets);
-          const preview = groups.slice(0, 3);
-          const more = Math.max(0, groups.length - preview.length);
+          const expanded = expandedSessions.has(session.id);
+          const visibleGroups = expanded ? groups : groups.slice(0, 3);
+          const hiddenCount = Math.max(0, groups.length - visibleGroups.length);
           const rec = prDerived.prCountBySession.get(session.id) ?? 0;
           return (
             <SRCard key={session.id} style={{ marginBottom: 10 }}>
@@ -1281,7 +1294,7 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
                   </View>
                 </View>
               </View>
-              {preview.map((g, idx) => (
+              {visibleGroups.map((g, idx) => (
                 <View key={idx} style={s.exLine}>
                   <View style={s.exThumb}>
                     <Ionicons name="barbell-outline" size={18} color={COLORS.ink3} />
@@ -1289,7 +1302,24 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
                   <Text style={s.exText}>{g.setCount} set{g.setCount === 1 ? '' : 's'} {g.name}</Text>
                 </View>
               ))}
-              {more > 0 && <Text style={s.seeMore}>See {more} more exercise{more === 1 ? '' : 's'}</Text>}
+              {groups.length > 3 && (
+                <TouchableOpacity
+                  style={s.seeMoreBtn}
+                  onPress={() => toggleExpanded(session.id)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.seeMore}>
+                    {expanded
+                      ? 'Show fewer exercises'
+                      : `See ${hiddenCount} more exercise${hiddenCount === 1 ? '' : 's'}`}
+                  </Text>
+                  <Ionicons
+                    name={expanded ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={COLORS.ink3}
+                  />
+                </TouchableOpacity>
+              )}
               <View style={s.socialRow}>
                 <TouchableOpacity style={s.socialBtn} onPress={() => Alert.alert('Likes', 'Coming soon.')}>
                   <Ionicons name="thumbs-up-outline" size={20} color={COLORS.ink3} />
@@ -1351,6 +1381,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useUserStore();
+  const { startWorkout } = useWorkoutStore();
 
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [prDerived, setPrDerived] = useState<{
@@ -1423,6 +1454,51 @@ export default function ProfileScreen() {
     if (error) { Alert.alert('Could not delete', error.message); return; }
     setMenuSession(null);
     void load();
+  };
+
+  const copyWorkout = async (session: SessionRow) => {
+    setMenuSession(null);
+    const { data, error } = await supabase
+      .from('workout_sets')
+      .select('*, exercise:exercises(*)')
+      .eq('session_id', session.id)
+      .order('set_index', { ascending: true });
+
+    if (error) {
+      Alert.alert('Could not copy workout', error.message);
+      return;
+    }
+
+    const grouped = new Map<string, WorkoutExerciseInput>();
+    for (const row of (data ?? []) as CopyWorkoutSetRow[]) {
+      if (!row.exercise) continue;
+      const existing = grouped.get(row.exercise_id);
+      const copiedSet = {
+        set_type: row.set_type ?? 'working',
+        weight_kg: Number(row.weight_kg) || 0,
+        reps: Number(row.reps) || 0,
+        rpe: row.rpe != null ? Number(row.rpe) : null,
+        duration_seconds: row.duration_seconds ?? null,
+      };
+      if (existing) {
+        existing.sets = [...(existing.sets ?? []), copiedSet];
+      } else {
+        grouped.set(row.exercise_id, {
+          exercise: row.exercise,
+          sets: [copiedSet],
+          restSeconds: user?.rest_timer_default ?? 90,
+        });
+      }
+    }
+
+    const inputs = [...grouped.values()];
+    if (inputs.length === 0) {
+      Alert.alert('Could not copy workout', 'This workout has no saved exercise sets.');
+      return;
+    }
+
+    startWorkout(session.routine_id ?? undefined, session.routine_name ?? 'Copied workout', inputs);
+    router.push('/workout/active');
   };
 
   return (
@@ -1539,7 +1615,7 @@ export default function ProfileScreen() {
                   <Ionicons name="download-outline" size={22} color={COLORS.ink} />
                   <Text style={s.sheetRowTxt}>Save as routine</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.sheetRow} onPress={() => { setMenuSession(null); Alert.alert('Copy workout', 'Duplicate session — coming soon.'); }}>
+                <TouchableOpacity style={s.sheetRow} onPress={() => void copyWorkout(menuSession)}>
                   <Ionicons name="copy-outline" size={22} color={COLORS.ink} />
                   <Text style={s.sheetRowTxt}>Copy workout</Text>
                 </TouchableOpacity>
@@ -1679,7 +1755,8 @@ const s = StyleSheet.create({
   exLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginTop: 10 },
   exThumb: { width: 40, height: 40, borderRadius: 10, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
   exText: { flex: 1, fontSize: 13, color: COLORS.ink2, fontWeight: '500' },
-  seeMore: { textAlign: 'center', fontSize: 12, color: COLORS.ink3, marginTop: 12, fontWeight: '600' },
+  seeMoreBtn: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12, paddingVertical: 6, paddingHorizontal: 10 },
+  seeMore: { textAlign: 'center', fontSize: 12, color: COLORS.ink3, fontWeight: '600' },
   socialRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, gap: 20 },
   socialBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   socialCt: { fontSize: 13, color: COLORS.ink3, fontWeight: '600' },

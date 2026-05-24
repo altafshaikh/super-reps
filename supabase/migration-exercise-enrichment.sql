@@ -5,6 +5,7 @@ ALTER TABLE exercises
   ADD COLUMN IF NOT EXISTS image_url    TEXT,
   ADD COLUMN IF NOT EXISTS gif_url      TEXT,
   ADD COLUMN IF NOT EXISTS form_cues    TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS exercise_type TEXT,
   ADD COLUMN IF NOT EXISTS level        TEXT,
   ADD COLUMN IF NOT EXISTS force        TEXT,
   ADD COLUMN IF NOT EXISTS mechanic     TEXT,

@@ -32,7 +32,10 @@ const BLUE_ACCENT = '#0070FF';
 
 function getExerciseDisplayType(exercise: Exercise): 'weight_reps' | 'bodyweight_reps' | 'duration' {
   const et = exercise.exercise_type ?? '';
-  if (et === 'duration') return 'duration';
+  const timedSlugs = new Set(['plank', 'side_plank', 'jump_rope', 'stair_climber', 'warm_up', 'stretching']);
+  if (et === 'duration' || et === 'distance_duration' || et === 'weight_duration' || timedSlugs.has(exercise.slug)) {
+    return 'duration';
+  }
   if (et === 'bodyweight_reps') return 'bodyweight_reps';
   const bwEquip = exercise.equipment?.every(e => e === 'bodyweight' || e === 'pullup_bar');
   if (bwEquip && exercise.equipment?.length > 0) return 'bodyweight_reps';
@@ -474,6 +477,10 @@ export default function ActiveWorkoutScreen() {
     for (const ex of exercises) {
       for (const set of ex.sets) {
         if (set.completed || prefilledSets.current.has(set.id)) continue;
+        if (set.weight_kg > 0 || set.reps > 0 || set.duration_seconds != null) {
+          prefilledSets.current.add(set.id);
+          continue;
+        }
         const prefill = resolveSetPrefill(ex.exercise.id, exerciseHistory);
         if (prefill.weight_kg === 0 && prefill.reps === 8) continue;
         prefilledSets.current.add(set.id);

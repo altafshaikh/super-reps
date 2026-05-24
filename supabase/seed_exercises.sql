@@ -121,3 +121,17 @@ INSERT INTO exercises (name, slug, category, muscle_groups, equipment, instructi
 ('Assisted Pull-Up',        'assisted_pull_up',        'Back',      ARRAY['back','biceps'],               ARRAY['cables'], 'Machine-assisted pull-up for building strength.')
 
 ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO exercises (name, slug, category, muscle_groups, equipment, instructions, exercise_type) VALUES
+('Stretching', 'stretching', 'Mobility', ARRAY['full_body'], ARRAY['bodyweight'], 'Use slow controlled stretches or mobility work. Breathe steadily and avoid painful ranges.', 'duration')
+ON CONFLICT (slug) DO UPDATE SET
+  category = EXCLUDED.category,
+  muscle_groups = EXCLUDED.muscle_groups,
+  equipment = EXCLUDED.equipment,
+  instructions = EXCLUDED.instructions,
+  exercise_type = EXCLUDED.exercise_type;
+
+UPDATE exercises
+SET exercise_type = 'duration'
+WHERE slug IN ('plank', 'side_plank', 'jump_rope', 'stair_climber', 'warm_up')
+  AND exercise_type IS NULL;

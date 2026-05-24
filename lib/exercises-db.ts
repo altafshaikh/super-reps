@@ -1240,6 +1240,15 @@ const CARDIO: ExerciseEntry[] = [
     equipment: ['bodyweight'],
     type: 'duration',
   },
+  {
+    name: 'Stretching',
+    slug: 'stretching',
+    aliases: ['stretch', 'stretches', 'mobility', 'mobility work', 'static stretching', 'dynamic stretching', 'cool down', 'cooldown'],
+    primary: ['full_body'],
+    secondary: [],
+    equipment: ['bodyweight'],
+    type: 'duration',
+  },
 ];
 
 // ─── MASTER DATABASE ──────────────────────────────────────────────────────────

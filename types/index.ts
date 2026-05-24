@@ -161,4 +161,5 @@ export interface WorkoutExerciseInput {
   setsCount?: number;
   defaultReps?: number;
   restSeconds?: number;
+  sets?: Array<Pick<ActiveSet, 'set_type' | 'weight_kg' | 'reps' | 'rpe' | 'duration_seconds'>>;
 }

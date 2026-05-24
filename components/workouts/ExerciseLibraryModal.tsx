@@ -127,7 +127,7 @@ export function ExerciseLibraryModal({ visible, onClose, onAddExercise, onCreate
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('exercises').select('*').order('name').limit(800);
+    const { data } = await supabase.from('exercises').select('*').order('name').limit(2000);
     setAllExercises((data ?? []) as Exercise[]);
     setLoading(false);
   }, []);
