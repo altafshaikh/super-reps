@@ -925,7 +925,12 @@ function derivePillColors(sessions: WorkoutSession[], hasPRs: boolean): Record<P
   };
 }
 
-function AIReviewCard({ sessions, hasPRs }: { sessions: WorkoutSession[]; hasPRs: boolean }) {
+function AIReviewCard({ sessions, hasPRs, streak, prCount }: {
+  sessions: WorkoutSession[];
+  hasPRs: boolean;
+  streak: number;
+  prCount: number;
+}) {
   const { user, aiReview, aiReviewGeneratedAt, setAIReview } = useUserStore();
   const [expanded, setExpanded] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -937,12 +942,35 @@ function AIReviewCard({ sessions, hasPRs }: { sessions: WorkoutSession[]; hasPRs
     const stale = !aiReviewGeneratedAt || (Date.now() - aiReviewGeneratedAt) > 24 * 60 * 60 * 1000;
     if (!stale) return;
     setGenerating(true);
-    const recentSessions = sessions.slice(0, 7).map(s => ({
+
+    const now = Date.now();
+    const MS_7D  = 7  * 24 * 60 * 60 * 1000;
+    const MS_14D = 14 * 24 * 60 * 60 * 1000;
+
+    const toReviewRow = (s: WorkoutSession) => ({
       date: s.started_at,
       exercises: [s.routine_name ?? 'Workout'],
       volume: Number(s.volume_total ?? 0),
-    }));
-    getWeeklyReview(recentSessions)
+    });
+
+    const thisWeekSessions = sessions
+      .filter(s => now - new Date(s.started_at).getTime() <= MS_7D)
+      .map(toReviewRow);
+
+    const prevWeekSessions = sessions
+      .filter(s => {
+        const age = now - new Date(s.started_at).getTime();
+        return age > MS_7D && age <= MS_14D;
+      })
+      .map(toReviewRow);
+
+    getWeeklyReview(thisWeekSessions, {
+      thisWeekCount: thisWeekSessions.length,
+      prevWeekSessions,
+      streak,
+      prCount,
+      totalSessions: sessions.length,
+    })
       .then(text => { if (text) setAIReview(text.trim()); })
       .catch(() => {})
       .finally(() => setGenerating(false));
@@ -1551,7 +1579,12 @@ export default function ProfileScreen() {
         </View>
 
         {/* AI Review Card */}
-        <AIReviewCard sessions={sessions} hasPRs={prDerived.bests.length > 0} />
+        <AIReviewCard
+          sessions={sessions}
+          hasPRs={prDerived.bests.length > 0}
+          streak={streak}
+          prCount={prDerived.bests.length}
+        />
 
         {/* Horizontal tab strip */}
         <ScrollView

@@ -364,10 +364,50 @@ export async function getReadinessMessage(
 
 export async function getWeeklyReview(
   sessions: { date: string; exercises: string[]; volume: number }[],
+  context?: {
+    thisWeekCount: number;
+    prevWeekSessions: { date: string; exercises: string[]; volume: number }[];
+    streak?: number;
+    prCount?: number;
+    totalSessions?: number;
+  },
 ): Promise<string> {
-  const summary = sessions
-    .map(s => `${s.date}: ${s.exercises.join(', ')} — volume ${s.volume}kg`)
-    .join('\n');
+  const thisWeekCount = context?.thisWeekCount ?? sessions.length;
+
+  let userContent: string;
+
+  if (thisWeekCount === 0) {
+    const lines = ['The user logged zero workouts this week. Do not suggest rest — they need encouragement to get back to training.'];
+    if (context?.streak) lines.push(`Their current streak is ${context.streak} days.`);
+    if (context?.totalSessions) lines.push(`They have ${context.totalSessions} total sessions logged — they are an active lifter who hit a low week, not a beginner.`);
+    userContent = lines.join(' ');
+  } else {
+    const thisWeekSummary = sessions
+      .map(s => `${s.date}: ${s.exercises.join(', ')} — volume ${s.volume}kg`)
+      .join('\n');
+
+    const prevWeekSummary = context?.prevWeekSessions?.length
+      ? context.prevWeekSessions
+          .map(s => `${s.date}: ${s.exercises.join(', ')} — volume ${s.volume}kg`)
+          .join('\n')
+      : null;
+
+    const lines = [
+      `This week the user logged ${thisWeekCount} session(s):`,
+      thisWeekSummary,
+    ];
+    if (prevWeekSummary) {
+      lines.push(`\nPrevious week's sessions (for comparison):`);
+      lines.push(prevWeekSummary);
+    }
+    if (context?.streak) lines.push(`\nCurrent training streak: ${context.streak} day(s).`);
+    if (context?.prCount) lines.push(`Personal records set (all time): ${context.prCount}.`);
+    if (context?.totalSessions) lines.push(`Total lifetime sessions logged: ${context.totalSessions}.`);
+    lines.push(
+      `\nCritical rule: if ${thisWeekCount} sessions is lower than the previous week, do NOT default to "rest" advice — they already had fewer sessions. Encourage them to train more. Only suggest rest if volume per session is clearly elevated and recovery is needed.`,
+    );
+    userContent = lines.join('\n');
+  }
 
   const completion = await client.chat.completions.create({
     model: ROUTINE_MODEL,
@@ -377,11 +417,11 @@ export async function getWeeklyReview(
       {
         role: 'system',
         content:
-          'You are a personal trainer. Respond with plain text only — no markdown, no bullet symbols, no headings. At most 3 short sentences for a mobile app card.',
+          'You are a personal trainer. Respond with plain text only — no markdown, no bullet symbols, no headings. At most 3 short sentences for a mobile app card. Never suggest rest when the user has already had a low-activity week.',
       },
       {
         role: 'user',
-        content: `Past week of training:\n${summary}\n\nGive one concise weekly takeaway: volume trend, progression, and one actionable tip (rest or next session).`,
+        content: userContent,
       },
     ],
   });
