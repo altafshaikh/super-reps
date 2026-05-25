@@ -12,6 +12,7 @@ export default function WorkoutLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0F172A' } }}>
       <Stack.Screen name="active" options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="complete" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="[sessionId]" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

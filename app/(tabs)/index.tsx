@@ -464,7 +464,7 @@ export default function HomeScreen() {
                   {todaySession.routine_name ?? 'Free Workout'}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/workouts')}>
+              <TouchableOpacity onPress={() => router.push(`/workout/${todaySession.id}`)}>
                 <Text style={s.doneSeeAll}>Details →</Text>
               </TouchableOpacity>
             </View>
