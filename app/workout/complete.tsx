@@ -57,7 +57,7 @@ export default function WorkoutCompleteScreen() {
   const durationSec = Number(params.durationSec) || 0;
   const setCount = Number(params.setCount) || 0;
   const volumeKg = Number(params.volumeKg) || 0;
-  const caloriesBurned = Number(params.caloriesBurned) || 0;
+  const caloriesBurned = Math.max(0, Number(params.caloriesBurned) || 0);
 
   const [when, setWhen] = useState<Date>(startedAt ?? new Date());
   const [durationSecs, setDurationSecs] = useState(durationSec);

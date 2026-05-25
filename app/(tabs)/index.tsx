@@ -472,7 +472,7 @@ export default function HomeScreen() {
             <View style={s.doneStats}>
               <View style={s.doneStat}>
                 <Ionicons name="time-outline" size={18} color={COLORS.green} />
-                <Text style={s.doneStatVal}>
+                <Text style={s.doneStatVal} numberOfLines={1} adjustsFontSizeToFit>
                   {todaySession.duration_seconds
                     ? `${Math.round(todaySession.duration_seconds / 60)} min`
                     : '–'}
@@ -482,7 +482,7 @@ export default function HomeScreen() {
               <View style={s.doneStatDivider} />
               <View style={s.doneStat}>
                 <Ionicons name="barbell-outline" size={18} color={COLORS.green} />
-                <Text style={s.doneStatVal}>
+                <Text style={s.doneStatVal} numberOfLines={1} adjustsFontSizeToFit>
                   {todaySession.volume_total
                     ? `${Number(todaySession.volume_total).toLocaleString()} kg`
                     : '–'}
@@ -492,7 +492,7 @@ export default function HomeScreen() {
               <View style={s.doneStatDivider} />
               <View style={s.doneStat}>
                 <Ionicons name="layers-outline" size={18} color={COLORS.green} />
-                <Text style={s.doneStatVal}>{todaySetsCount}</Text>
+                <Text style={s.doneStatVal} numberOfLines={1} adjustsFontSizeToFit>{todaySetsCount}</Text>
                 <Text style={s.doneStatLab}>Total sets</Text>
               </View>
               {(todaySession.calories_burned ?? 0) > 0 && (
@@ -500,7 +500,9 @@ export default function HomeScreen() {
                   <View style={s.doneStatDivider} />
                   <View style={s.doneStat}>
                     <Ionicons name="flame-outline" size={18} color={COLORS.green} />
-                    <Text style={s.doneStatVal}>~{todaySession.calories_burned}</Text>
+                    <Text style={s.doneStatVal} numberOfLines={1} adjustsFontSizeToFit>
+                      ~{Math.max(0, todaySession.calories_burned ?? 0)}
+                    </Text>
                     <Text style={s.doneStatLab}>kcal</Text>
                   </View>
                 </>
@@ -700,9 +702,9 @@ const s = StyleSheet.create({
     flexDirection: 'row', backgroundColor: COLORS.surface2,
     borderRadius: 12, paddingVertical: 16,
   },
-  doneStat:        { flex: 1, alignItems: 'center', gap: 4 },
+  doneStat:        { flex: 1, minWidth: 0, alignItems: 'center', gap: 4 },
   doneStatVal:     { fontSize: 16, fontWeight: '800', color: COLORS.ink },
-  doneStatLab:     { fontSize: 11, color: COLORS.ink3, fontWeight: '600' },
+  doneStatLab:     { fontSize: 11, color: COLORS.ink3, fontWeight: '600', textAlign: 'center' },
   doneStatDivider: { width: StyleSheet.hairlineWidth, backgroundColor: COLORS.surface3 },
 
   restDayCard: { padding: 20, gap: 8, borderColor: `${COLORS.amber}30`, borderWidth: 1 },
