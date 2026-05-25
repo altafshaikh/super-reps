@@ -931,16 +931,19 @@ function AIReviewCard({ sessions, hasPRs, streak, prCount }: {
   streak: number;
   prCount: number;
 }) {
-  const { user, aiReview, aiReviewGeneratedAt, setAIReview } = useUserStore();
+  const { user, aiReview, aiReviewDataKey, setAIReview } = useUserStore();
   const [expanded, setExpanded] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const pillColors = derivePillColors(sessions, hasPRs);
 
+  const totalVolume = sessions.reduce((sum, s) => sum + Number(s.volume_total ?? 0), 0);
+  const dataKey = `${sessions.length}:${Math.round(totalVolume)}`;
+
   useEffect(() => {
     if (!user || !sessions.length || generating) return;
-    const stale = !aiReviewGeneratedAt || (Date.now() - aiReviewGeneratedAt) > 24 * 60 * 60 * 1000;
-    if (!stale) return;
+    // Regenerate when a workout is added OR any session's volume changes
+    if (aiReviewDataKey === dataKey) return;
     setGenerating(true);
 
     const now = Date.now();
@@ -971,11 +974,11 @@ function AIReviewCard({ sessions, hasPRs, streak, prCount }: {
       prCount,
       totalSessions: sessions.length,
     })
-      .then(text => { if (text) setAIReview(text.trim()); })
+      .then(text => { if (text) setAIReview(text.trim(), dataKey); })
       .catch(() => {})
       .finally(() => setGenerating(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, sessions.length]);
+  }, [user?.id, dataKey]);
 
   const reviewText = aiReview ?? (generating ? null : 'Tap to generate your weekly review.');
 
@@ -1563,7 +1566,7 @@ export default function ProfileScreen() {
             <View style={s.statsRow}>
               {[
                 { val: streak > 0 ? `${streak} 🔥` : '0', lab: 'Streak'   },
-                { val: String(sessions.length),             lab: 'Sessions' },
+                { val: String(sessions.length),             lab: 'Workouts' },
                 { val: String(routineCount),                lab: 'Routines' },
               ].map((stat, i) => (
                 <View key={i} style={s.statItem}>
