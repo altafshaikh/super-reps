@@ -119,7 +119,7 @@ export default function WorkoutCompleteScreen() {
         finished_at: now.toISOString(),
         duration_seconds: durationSecs,
         volume_total: volumeKg,
-        calories_burned: caloriesBurned,
+        calories_burned: caloriesBurned > 0 ? caloriesBurned : null,
         notes: description.trim() || null,
       });
 

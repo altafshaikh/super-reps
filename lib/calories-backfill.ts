@@ -12,7 +12,7 @@ export async function backfillMissingCalories(
     .from('workout_sessions')
     .select('id, duration_seconds')
     .eq('user_id', userId)
-    .is('calories_burned', null)
+    .or('calories_burned.is.null,calories_burned.eq.0')
     .not('finished_at', 'is', null)
     .limit(200);
 
