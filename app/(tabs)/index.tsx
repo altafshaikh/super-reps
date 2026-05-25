@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { useWorkoutStore } from '@/stores/workoutStore';
+import { backfillMissingCalories } from '@/lib/calories-backfill';
 import type { PersonalRecord, WorkoutSession, Routine, Exercise, WorkoutExerciseInput } from '@/types';
 import { derivePersonalBestsFromFlatRows, fetchAllSetsForPersonalBests } from '@/lib/personal-bests';
 import { getReadinessMessage, type ReadinessContext } from '@/lib/ai';
@@ -176,6 +177,7 @@ export default function HomeScreen() {
     ]);
 
     if (sessionsRes.data) setSessions(sessionsRes.data as WorkoutSession[]);
+    backfillMissingCalories(user.id, user.body_weight_kg ?? 70).catch(() => {});
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
     if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
@@ -410,8 +412,8 @@ export default function HomeScreen() {
 
             {/* Week sessions badge */}
             <View style={s.streakBadge}>
-              <Text style={s.streakVal}>{streak > 0 ? `${streak} 🔥` : '0'}</Text>
-              <Text style={s.streakLab}>this week</Text>
+              <Text style={s.streakVal}>🔥 {streak}</Text>
+              <Text style={s.streakLab}>week streak</Text>
             </View>
           </View>
 
