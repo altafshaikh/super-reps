@@ -5,8 +5,8 @@ import type { ActiveExercise, ActiveSet, Exercise } from '@/types';
 export async function backfillMissingCalories(
   userId: string,
   bodyWeightKg: number,
-): Promise<void> {
-  if (bodyWeightKg <= 0) return;
+): Promise<boolean> {
+  if (bodyWeightKg <= 0) return false;
 
   const { data: nullSessions } = await supabase
     .from('workout_sessions')
@@ -16,7 +16,7 @@ export async function backfillMissingCalories(
     .not('finished_at', 'is', null)
     .limit(200);
 
-  if (!nullSessions?.length) return;
+  if (!nullSessions?.length) return false;
 
   const sessionIds = nullSessions.map(s => s.id);
 
@@ -29,7 +29,7 @@ export async function backfillMissingCalories(
     `)
     .in('session_id', sessionIds);
 
-  if (!rawSets?.length) return;
+  if (!rawSets?.length) return false;
 
   // Group sets by session → by exercise
   const bySession = new Map<string, Map<string, { exercise: Exercise; sets: ActiveSet[] }>>();
@@ -74,7 +74,7 @@ export async function backfillMissingCalories(
     if (calories > 0) updates.push({ id: session.id, calories_burned: calories });
   }
 
-  if (!updates.length) return;
+  if (!updates.length) return false;
 
   // Update in parallel batches of 10
   const BATCH = 10;
@@ -88,4 +88,5 @@ export async function backfillMissingCalories(
       ),
     );
   }
+  return true;
 }

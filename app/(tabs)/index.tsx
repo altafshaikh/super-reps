@@ -177,7 +177,18 @@ export default function HomeScreen() {
     ]);
 
     if (sessionsRes.data) setSessions(sessionsRes.data as WorkoutSession[]);
-    backfillMissingCalories(user.id, user.body_weight_kg ?? 70).catch(() => {});
+    backfillMissingCalories(user.id, user.body_weight_kg ?? 70).then(async (updated) => {
+      if (!updated) return;
+      const { data } = await supabase
+        .from('workout_sessions')
+        .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at, calories_burned')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .not('finished_at', 'is', null)
+        .order('started_at', { ascending: false })
+        .limit(500);
+      if (data) setSessions(data as WorkoutSession[]);
+    }).catch(() => {});
     const { bests } = derivePersonalBestsFromFlatRows(prFlat);
     setPersonalBests(bests);
     if (routinesRes.data) setRoutines(routinesRes.data as unknown as Routine[]);
