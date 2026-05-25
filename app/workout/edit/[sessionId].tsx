@@ -214,6 +214,7 @@ export default function EditWorkoutScreen() {
     const volume = toUpsert.reduce((sum, s) => sum + s.weight_kg * s.reps, 0);
     await supabase.from('workout_sessions')
       .update({
+        routine_name: routineName.trim() || null,
         volume_total: volume,
         started_at: when.toISOString(),
         duration_seconds: durationSecs,
@@ -281,6 +282,18 @@ export default function EditWorkoutScreen() {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Session metadata */}
         <View style={s.metaCard}>
+          <View style={s.metaRow}>
+            <Text style={s.metaLabel}>Name</Text>
+            <TextInput
+              style={s.nameInput}
+              value={routineName}
+              onChangeText={setRoutineName}
+              placeholder="Workout name"
+              placeholderTextColor={COLORS.ink4}
+              returnKeyType="done"
+            />
+          </View>
+          <View style={s.metaDivider} />
           <TouchableOpacity style={s.metaRow} onPress={() => setPickerMode('date')} activeOpacity={0.7}>
             <Text style={s.metaLabel}>When</Text>
             <Text style={s.metaValueBlue}>{formatWhen(when)}</Text>
@@ -606,6 +619,9 @@ const s = StyleSheet.create({
   metaLabel: { color: COLORS.ink3, fontSize: 12, fontWeight: '600', marginBottom: 4 },
   metaValueBlue: { color: COLORS.blue, fontSize: 15, fontWeight: '500' },
   metaDivider: { height: 0.5, backgroundColor: COLORS.border },
+  nameInput: {
+    color: COLORS.ink, fontSize: 15, fontWeight: '500',
+  },
   notesInput: {
     color: COLORS.ink, fontSize: 14, lineHeight: 20,
     minHeight: 56, marginTop: 2,

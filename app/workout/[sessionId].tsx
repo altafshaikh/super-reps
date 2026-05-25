@@ -140,7 +140,7 @@ export default function WorkoutDetailScreen() {
         </TouchableOpacity>
         <View style={s.headerCenter}>
           <Text style={s.headerTitle} numberOfLines={1}>
-            {session.routine_name ?? 'Quick Workout'}
+            {session.routine_name ?? 'Workout'}
           </Text>
           <Text style={s.headerSub}>{formatDate(session.started_at)}</Text>
         </View>

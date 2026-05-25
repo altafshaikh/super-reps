@@ -1284,7 +1284,7 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
         </SRCard>
       ) : (
         sessions.map(session => {
-          const title = session.routine_name ?? 'Quick Workout';
+          const title = session.routine_name ?? 'Workout';
           const totalReps = sessionTotalReps(session.sets);
           const groups = groupExercises(session.sets);
           const expanded = expandedSessions.has(session.id);

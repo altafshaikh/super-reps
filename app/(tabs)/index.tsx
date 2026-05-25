@@ -366,9 +366,17 @@ export default function HomeScreen() {
 
   const restDayMessage = useMemo(() => REST_DAY_MESSAGES[new Date().getDay() % REST_DAY_MESSAGES.length], []);
 
+  const getTimeOfDayName = () => {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return 'Morning Workout';
+    if (h >= 12 && h < 17) return 'Afternoon Workout';
+    if (h >= 17 && h < 21) return 'Evening Workout';
+    return 'Night Workout';
+  };
+
   const handleStartRoutine = () => {
     if (!currentRoutine || !routineDay) {
-      startWorkout();
+      startWorkout(undefined, getTimeOfDayName());
       router.push('/workout/active');
       return;
     }

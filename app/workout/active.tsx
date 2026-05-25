@@ -486,6 +486,7 @@ export default function ActiveWorkoutScreen() {
     restRemaining, restActive, restSeconds,
     coachText, setCoachText, nextCoachMessage,
     resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache, setStartedAt,
+    setRoutineName,
   } = useWorkoutStore();
   const { user } = useUserStore();
 
@@ -498,6 +499,9 @@ export default function ActiveWorkoutScreen() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [coachLoading, setCoachLoading] = useState<string | null>(null);
   const [exerciseHistory, setExerciseHistory] = useState<Map<string, SetHistory>>(new Map());
+
+  const [showNameEditor, setShowNameEditor] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   // Menu state
   const [menuExerciseId, setMenuExerciseId] = useState<string | null>(null);
@@ -653,7 +657,7 @@ export default function ActiveWorkoutScreen() {
     router.push({
       pathname: '/workout/complete',
       params: {
-        routineName: encodeURIComponent(routineName ?? 'Quick Workout'),
+        routineName: encodeURIComponent(routineName ?? 'Workout'),
         durationSec: String(elapsed),
         setCount: String(completedSets.length),
         volumeKg: String(Math.round(volumeTotal)),
@@ -706,9 +710,15 @@ export default function ActiveWorkoutScreen() {
           <Ionicons name="chevron-down" size={22} color={COLORS.ink2} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginHorizontal: 8 }}>
-          <Text style={s.routineName} numberOfLines={1}>
-            {routineName ?? 'Quick Workout'}
-          </Text>
+          <TouchableOpacity
+            onPress={() => { setDraftName(routineName ?? ''); setShowNameEditor(true); }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
+          >
+            <Text style={s.routineName} numberOfLines={1}>
+              {routineName ?? 'Workout'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => {
               setDraftElapsedH(String(Math.floor(elapsed / 3600)));
@@ -972,6 +982,49 @@ export default function ActiveWorkoutScreen() {
           setReplaceForExerciseId(null);
         }}
       />
+
+      {/* Workout name editor */}
+      <Modal
+        visible={showNameEditor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNameEditor(false)}
+      >
+        <TouchableOpacity style={s.elapsedModalBackdrop} activeOpacity={1} onPress={() => setShowNameEditor(false)}>
+          <TouchableOpacity activeOpacity={1} style={s.elapsedModal}>
+            <Text style={s.elapsedModalTitle}>Rename Workout</Text>
+            <TextInput
+              style={[s.elapsedInput, { width: '100%', textAlign: 'left', paddingHorizontal: 12, fontSize: 15 }]}
+              value={draftName}
+              onChangeText={setDraftName}
+              placeholder="Workout name"
+              placeholderTextColor={COLORS.ink3}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                const name = draftName.trim();
+                if (name) setRoutineName(name);
+                setShowNameEditor(false);
+              }}
+            />
+            <View style={s.elapsedActions}>
+              <TouchableOpacity style={s.elapsedCancel} onPress={() => setShowNameEditor(false)}>
+                <Text style={s.elapsedCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.elapsedConfirm}
+                onPress={() => {
+                  const name = draftName.trim();
+                  if (name) setRoutineName(name);
+                  setShowNameEditor(false);
+                }}
+              >
+                <Text style={s.elapsedConfirmTxt}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Elapsed time editor */}
       <Modal

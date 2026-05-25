@@ -48,6 +48,7 @@ interface WorkoutStore {
   nextCoachMessage: () => string | null;
   minimizeWorkout: () => void;
   expandWorkout: () => void;
+  setRoutineName: (name: string) => void;
   setPrCache: (cache: Record<string, number>) => void;
   setStartedAt: (date: Date) => void;
   finishWorkout: () => { exercises: ActiveExercise[]; startedAt: Date; sessionId: string };
@@ -277,6 +278,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   minimizeWorkout: () => set({ isMinimized: true }),
   expandWorkout: () => set({ isMinimized: false }),
 
+  setRoutineName: (name) => set({ routineName: name }),
   setPrCache: (cache) => set({ prCache: cache }),
 
   setStartedAt: (date) => set({ startedAt: date }),
