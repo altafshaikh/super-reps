@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/stores/userStore';
 import { COLORS } from '@/constants';
 import { formatWeight } from '@/lib/utils';
+import { secPerRep } from '@/lib/calories';
 import { LineChart } from '@/components/ui';
 import type { Exercise } from '@/types';
 
@@ -20,6 +21,8 @@ interface SetRow {
   reps: number;
   completed_at: string;
   session_id: string;
+  tempo_rps?: number | null;
+  duration_seconds?: number | null;
 }
 
 interface SessionGroup {
@@ -41,7 +44,7 @@ export default function ExerciseDetailScreen() {
   const [sets, setSets] = useState<SetRow[]>([]);
   const [sessions, setSessions] = useState<SessionGroup[]>([]);
 
-  const [metric, setMetric] = useState<'weight' | '1rm' | 'volume'>('weight');
+  const [metric, setMetric] = useState<'weight' | '1rm' | 'volume' | 'tempo'>('weight');
 
   useEffect(() => {
     if (!id) return;
@@ -56,7 +59,7 @@ export default function ExerciseDetailScreen() {
     if (!user || !id) return;
     supabase
       .from('workout_sets')
-      .select('weight_kg, reps, completed_at, session_id')
+      .select('weight_kg, reps, completed_at, session_id, tempo_rps, duration_seconds')
       .eq('exercise_id', id)
       .eq('user_id', user.id)
       .order('completed_at', { ascending: true })
@@ -79,7 +82,6 @@ export default function ExerciseDetailScreen() {
   }, [user, id]);
 
   const chartData = useCallback(() => {
-    // One data point per session — group by session_id
     const bySession = new Map<string, { date: string; value: number }>();
     for (const row of sets) {
       const date = row.completed_at.slice(0, 10);
@@ -87,6 +89,11 @@ export default function ExerciseDetailScreen() {
       if (metric === 'weight') value = row.weight_kg;
       else if (metric === '1rm') value = row.weight_kg * (1 + row.reps / 30);
       else if (metric === 'volume') value = row.weight_kg * row.reps;
+      else if (metric === 'tempo') {
+        const spr = secPerRep(row.tempo_rps);
+        if (spr == null) continue;
+        value = spr;
+      }
 
       const existing = bySession.get(row.session_id);
       if (!existing || value > existing.value) {
@@ -172,14 +179,14 @@ export default function ExerciseDetailScreen() {
 
             {/* Metric selector */}
             <View style={s.metricRow}>
-              {(['weight', '1rm', 'volume'] as const).map(m => (
+              {(['weight', '1rm', 'volume', 'tempo'] as const).map(m => (
                 <TouchableOpacity
                   key={m}
                   style={[s.metricChip, metric === m && s.metricChipActive]}
                   onPress={() => setMetric(m)}
                 >
                   <Text style={[s.metricTxt, metric === m && s.metricTxtActive]}>
-                    {m === 'weight' ? 'Heaviest Weight' : m === '1rm' ? 'One Rep Max' : 'Best Set Vol'}
+                    {m === 'weight' ? 'Heaviest' : m === '1rm' ? '1RM' : m === 'volume' ? 'Volume' : 'Tempo'}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -232,11 +239,20 @@ export default function ExerciseDetailScreen() {
             ) : sessions.map(session => (
               <View key={session.sessionId} style={s.historyCard}>
                 <Text style={s.historyDate}>{new Date(session.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</Text>
-                {session.sets.map((set, i) => (
-                  <Text key={i} style={s.historySet}>
-                    Set {i + 1}: {formatWeight(set.weight_kg)} kg × {set.reps} reps
-                  </Text>
-                ))}
+                {session.sets.map((set, i) => {
+                  const spr = secPerRep(set.tempo_rps);
+                  const tempoStr = spr != null ? ` · ${spr.toFixed(1)}s/rep` : '';
+                  const setDisplay = set.reps > 0
+                    ? `${formatWeight(set.weight_kg)} kg × ${set.reps} reps${tempoStr}`
+                    : set.duration_seconds
+                      ? `${Math.floor(set.duration_seconds / 60)}:${String(set.duration_seconds % 60).padStart(2, '0')}`
+                      : '—';
+                  return (
+                    <Text key={i} style={s.historySet}>
+                      Set {i + 1}: {setDisplay}
+                    </Text>
+                  );
+                })}
               </View>
             ))}
           </>

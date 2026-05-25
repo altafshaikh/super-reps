@@ -20,6 +20,7 @@ import { getCoachAdvice } from '@/lib/ai';
 import { detectTrigger, generateTriggerMessage } from '@/lib/workout-coaching';
 import { formatDuration, formatWeight } from '@/lib/utils';
 import { fetchHistoricalMaxWeightByExercise } from '@/lib/workout-pr';
+import { calcSessionCalories } from '@/lib/calories';
 import { resolveSetPrefill } from '@/lib/set-prefill';
 import type { SetHistory } from '@/lib/set-prefill';
 import { COLORS } from '@/constants';
@@ -276,10 +277,12 @@ function DurationCell({
   );
 }
 
+const AMBER_ROW = 'rgba(251,191,36,0.10)';
+
 // ── Inline set row ────────────────────────────────────────────
 function InlineSetRow({
   set, index, exerciseId, displayType, prevWeight, prevReps, prevDuration,
-  onUpdate, onComplete, onRemove, isLast,
+  onUpdate, onComplete, onRemove, onStart, isLast,
 }: {
   set: ActiveSet;
   index: number;
@@ -291,6 +294,7 @@ function InlineSetRow({
   onUpdate: (exId: string, setId: string, updates: Partial<ActiveSet>) => void;
   onComplete: (exId: string, setId: string) => void;
   onRemove: (exId: string, setId: string) => void;
+  onStart: (exId: string, setId: string) => void;
   isLast: boolean;
 }) {
   const [timerRunning, setTimerRunning] = useState(false);
@@ -348,7 +352,11 @@ function InlineSetRow({
     return '—';
   }, [displayType, prevWeight, prevReps, prevDuration]);
 
-  const rowBg = set.completed ? { backgroundColor: GREEN_ROW } : {};
+  const rowBg = set.completed
+    ? { backgroundColor: GREEN_ROW }
+    : set.isStarted
+      ? { backgroundColor: AMBER_ROW }
+      : {};
 
   return (
     <Swipeable
@@ -359,8 +367,24 @@ function InlineSetRow({
       enabled={!set.completed}
     >
       <View style={[s.setRow, rowBg, !isLast && s.setRowBorder]}>
-        {/* Set number */}
-        <Text style={[s.setNum, set.completed && s.setNumDone]}>{index + 1}</Text>
+        {/* Set number — tap to start */}
+        <TouchableOpacity
+          style={s.setNumBtn}
+          onPress={() => {
+            if (!set.completed && !set.isStarted) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onStart(exerciseId, set.id);
+            }
+          }}
+          disabled={set.completed || set.isStarted}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        >
+          <Text style={[
+            s.setNum,
+            set.completed && s.setNumDone,
+            set.isStarted && !set.completed && s.setNumActive,
+          ]}>{index + 1}</Text>
+        </TouchableOpacity>
 
         {/* PREVIOUS column */}
         <Text style={[s.prevCol, set.completed && s.prevColDone]} numberOfLines={1}>{prevDisplay}</Text>
@@ -456,7 +480,7 @@ export default function ActiveWorkoutScreen() {
   const insets = useSafeAreaInsets();
   const {
     routineName, startedAt, exercises, isActive,
-    addSet, updateSet, completeSet, removeSet, addExercise,
+    addSet, updateSet, startSet, completeSet, removeSet, addExercise,
     reorderExercises, replaceExercise, updateExerciseNotes,
     startRest, adjustRest, tickRest, skipRest,
     restRemaining, restActive, restSeconds,
@@ -624,6 +648,8 @@ export default function ActiveWorkoutScreen() {
     }
     const volumeTotal = exercises.reduce((a, ex) =>
       a + ex.sets.filter(s => s.completed).reduce((b, s) => b + s.weight_kg * s.reps, 0), 0);
+    const bodyWeightKg = user?.body_weight_kg ?? 70;
+    const caloriesBurned = calcSessionCalories(exercises, bodyWeightKg, elapsed);
     router.push({
       pathname: '/workout/complete',
       params: {
@@ -631,6 +657,7 @@ export default function ActiveWorkoutScreen() {
         durationSec: String(elapsed),
         setCount: String(completedSets.length),
         volumeKg: String(Math.round(volumeTotal)),
+        caloriesBurned: String(caloriesBurned),
       },
     });
   };
@@ -641,6 +668,7 @@ export default function ActiveWorkoutScreen() {
   const progressPct = totalSets > 0 ? doneSets / totalSets : 0;
   const totalVolumeKg = exercises.reduce((a, ex) =>
     a + ex.sets.filter(s => s.completed).reduce((b, s) => b + s.weight_kg * s.reps, 0), 0);
+  const liveCalories = calcSessionCalories(exercises, user?.body_weight_kg ?? 70, elapsed);
 
   const menuExercise = menuExerciseId ? exercises.find(e => e.exercise.id === menuExerciseId) : null;
   const exerciseListForReorder = exercises.map((e, i) => ({ id: e.exercise.id, name: e.exercise.name, index: i }));
@@ -732,6 +760,11 @@ export default function ActiveWorkoutScreen() {
           <View style={s.statItem}>
             <Text style={s.statValue}>{doneSets}</Text>
             <Text style={s.statLabel}>Sets</Text>
+          </View>
+          <View style={s.statDivider} />
+          <View style={s.statItem}>
+            <Text style={s.statValue}>{liveCalories > 0 ? `~${liveCalories}` : '—'}</Text>
+            <Text style={s.statLabel}>kcal</Text>
           </View>
         </View>
 
@@ -858,6 +891,7 @@ export default function ActiveWorkoutScreen() {
                           onUpdate={updateSet}
                           onComplete={handleCompleteSet}
                           onRemove={removeSet}
+                          onStart={startSet}
                           isLast={i === sets.length - 1}
                         />
                       );
@@ -1110,8 +1144,10 @@ const s = StyleSheet.create({
 
   setRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
   setRowBorder: { borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
-  setNum: { color: COLORS.ink2, fontSize: 13, fontWeight: '700', width: 28, textAlign: 'center' },
+  setNumBtn: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  setNum: { color: COLORS.ink2, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   setNumDone: { color: '#FFFFFF' },
+  setNumActive: { color: COLORS.amber },
 
   prevCol: { flex: 1, color: COLORS.ink3, fontSize: 12, textAlign: 'center' },
   prevColDone: { color: 'rgba(255,255,255,0.6)' },

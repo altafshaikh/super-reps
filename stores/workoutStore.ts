@@ -37,6 +37,7 @@ interface WorkoutStore {
   updateExerciseNotes: (exerciseId: string, notes: string) => void;
   addSet: (exerciseId: string) => void;
   updateSet: (exerciseId: string, setId: string, updates: Partial<ActiveSet>) => void;
+  startSet: (exerciseId: string, setId: string) => void;
   completeSet: (exerciseId: string, setId: string) => void;
   removeSet: (exerciseId: string, setId: string) => void;
   startRest: (seconds: number) => void;
@@ -195,13 +196,37 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     }));
   },
 
+  startSet: (exerciseId, setId) => {
+    set(s => ({
+      exercises: s.exercises.map(e => {
+        if (e.exercise.id !== exerciseId) return e;
+        return {
+          ...e,
+          sets: e.sets.map(s =>
+            s.id === setId && !s.completed
+              ? { ...s, isStarted: true, started_at: Date.now() }
+              : s
+          ),
+        };
+      }),
+    }));
+  },
+
   completeSet: (exerciseId, setId) => {
     set(s => ({
       exercises: s.exercises.map(e => {
         if (e.exercise.id !== exerciseId) return e;
         return {
           ...e,
-          sets: e.sets.map(s => s.id === setId ? { ...s, completed: true } : s),
+          sets: e.sets.map(s => {
+            if (s.id !== setId) return s;
+            const durationMs = s.started_at ? Date.now() - s.started_at : null;
+            const tempo_rps =
+              durationMs && durationMs > 500 && s.reps > 0
+                ? s.reps / (durationMs / 1000)
+                : null;
+            return { ...s, completed: true, tempo_rps };
+          }),
         };
       }),
     }));

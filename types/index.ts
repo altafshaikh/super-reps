@@ -22,6 +22,7 @@ export interface User {
   dob: string | null;
   units: 'kg' | 'lbs' | null;
   rest_timer_default: number | null;
+  body_weight_kg?: number | null;
 }
 
 export interface Exercise {
@@ -83,6 +84,8 @@ export interface SetLog {
   distance_km?: number | null;
   notes?: string | null;
   completed_at: string;
+  started_at?: string | null;
+  tempo_rps?: number | null;
   exercise?: { name: string } | null;
 }
 
@@ -96,6 +99,7 @@ export interface WorkoutSession {
   duration_seconds: number | null;
   notes: string | null;
   volume_total: number;
+  calories_burned?: number | null;
   deleted_at?: string | null;
   sets?: SetLog[];
 }
@@ -147,6 +151,9 @@ export interface ActiveSet {
   rpe: number | null;
   duration_seconds: number | null;
   completed: boolean;
+  isStarted?: boolean;
+  started_at?: number | null;  // ms timestamp captured when user taps to start
+  tempo_rps?: number | null;   // reps/sec, calculated on completion
 }
 
 export interface ActiveExercise {

@@ -44,6 +44,7 @@ export default function WorkoutCompleteScreen() {
     durationSec?: string;
     setCount?: string;
     volumeKg?: string;
+    caloriesBurned?: string;
   }>();
 
   const {
@@ -56,6 +57,7 @@ export default function WorkoutCompleteScreen() {
   const durationSec = Number(params.durationSec) || 0;
   const setCount = Number(params.setCount) || 0;
   const volumeKg = Number(params.volumeKg) || 0;
+  const caloriesBurned = Number(params.caloriesBurned) || 0;
 
   const [when, setWhen] = useState<Date>(startedAt ?? new Date());
   const [durationSecs, setDurationSecs] = useState(durationSec);
@@ -102,6 +104,8 @@ export default function WorkoutCompleteScreen() {
             duration_seconds: set.duration_seconds,
             notes: ex.notes || null,
             completed_at: now.toISOString(),
+            started_at: set.started_at ? new Date(set.started_at).toISOString() : null,
+            tempo_rps: set.tempo_rps ?? null,
           });
         }
       }
@@ -115,6 +119,7 @@ export default function WorkoutCompleteScreen() {
         finished_at: now.toISOString(),
         duration_seconds: durationSecs,
         volume_total: volumeKg,
+        calories_burned: caloriesBurned,
         notes: description.trim() || null,
       });
 
@@ -195,6 +200,12 @@ export default function WorkoutCompleteScreen() {
             <Text style={s.statLabel}>Sets</Text>
             <Text style={s.statValue}>{setCount}</Text>
           </View>
+          {caloriesBurned > 0 && (
+            <View style={s.statItem}>
+              <Text style={s.statLabel}>Calories</Text>
+              <Text style={s.statValueGreen}>~{caloriesBurned} kcal</Text>
+            </View>
+          )}
         </View>
 
         <View style={s.divider} />
@@ -371,6 +382,7 @@ const s = StyleSheet.create({
   statLabel: { color: COLORS.ink3, fontSize: 12, fontWeight: '500', marginBottom: 3 },
   statValue: { color: COLORS.ink, fontWeight: '700', fontSize: 17 },
   statValueBlue: { color: COLORS.blue, fontWeight: '700', fontSize: 17 },
+  statValueGreen: { color: COLORS.green, fontWeight: '700', fontSize: 17 },
 
   divider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: 2 },
 
@@ -386,6 +398,23 @@ const s = StyleSheet.create({
 
   discardRow: { paddingVertical: 24, alignItems: 'center' },
   discardTxt: { color: COLORS.red, fontWeight: '600', fontSize: 16 },
+
+  perfSection: { paddingVertical: 18 },
+  perfTitle: { color: COLORS.ink3, fontSize: 13, fontWeight: '700', marginBottom: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
+  perfCard: {
+    backgroundColor: COLORS.surface2, borderRadius: 14,
+    borderWidth: 0.5, borderColor: COLORS.border,
+    padding: 14, marginBottom: 10,
+  },
+  perfExName: { color: COLORS.ink, fontWeight: '700', fontSize: 14, marginBottom: 4 },
+  perfAvg: { color: COLORS.primary, fontSize: 12, fontWeight: '600', marginBottom: 10 },
+  perfSetsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  perfSetChip: {
+    backgroundColor: COLORS.surface3, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center',
+  },
+  perfSetNum: { color: COLORS.ink3, fontSize: 10, fontWeight: '700' },
+  perfSetVal: { color: COLORS.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
 
   pickerSheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,

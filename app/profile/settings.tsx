@@ -32,6 +32,7 @@ export default function ProfileSettingsScreen() {
   // Preferences
   const [unitsLbs, setUnitsLbs] = useState(false);
   const [restTimerDraft, setRestTimerDraft] = useState('90');
+  const [bodyWeightDraft, setBodyWeightDraft] = useState('');
   const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function ProfileSettingsScreen() {
     setUsernameError('');
     setUnitsLbs(user?.units === 'lbs');
     setRestTimerDraft(String(user?.rest_timer_default ?? 90));
+    setBodyWeightDraft(user?.body_weight_kg ? String(user.body_weight_kg) : '');
   }, [user?.id]);
 
   const saveProfile = useCallback(async () => {
@@ -72,14 +74,16 @@ export default function ProfileSettingsScreen() {
   const savePrefs = useCallback(async () => {
     setSavingPrefs(true);
     const secs = parseInt(restTimerDraft, 10);
+    const bwKg = parseFloat(bodyWeightDraft);
     const { error } = await updateProfile({
       units: unitsLbs ? 'lbs' : 'kg',
       rest_timer_default: isNaN(secs) || secs < 15 ? 90 : secs,
+      body_weight_kg: !isNaN(bwKg) && bwKg > 0 ? bwKg : null,
     });
     setSavingPrefs(false);
     if (error) Alert.alert('Save failed', error.message);
     else Alert.alert('Saved', 'Preferences updated.');
-  }, [unitsLbs, restTimerDraft, updateProfile]);
+  }, [unitsLbs, restTimerDraft, bodyWeightDraft, updateProfile]);
 
   const handleSignOut = () => {
     if (Platform.OS === 'web') {
@@ -208,7 +212,17 @@ export default function ProfileSettingsScreen() {
             />
           </View>
           <SRDivider indent={0} />
-          <Text style={[s.fieldLab, { marginTop: 12 }]}>Rest timer default (seconds)</Text>
+          <Text style={[s.fieldLab, { marginTop: 12 }]}>Body weight (kg)</Text>
+          <TextInput
+            style={s.input}
+            value={bodyWeightDraft}
+            onChangeText={setBodyWeightDraft}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 75"
+            placeholderTextColor={COLORS.ink3}
+          />
+          <Text style={s.hint}>Used for calorie burn estimates</Text>
+          <Text style={[s.fieldLab, { marginTop: 14 }]}>Rest timer default (seconds)</Text>
           <TextInput
             style={s.input}
             value={restTimerDraft}
