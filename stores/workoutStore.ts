@@ -48,6 +48,7 @@ interface WorkoutStore {
   minimizeWorkout: () => void;
   expandWorkout: () => void;
   setPrCache: (cache: Record<string, number>) => void;
+  setStartedAt: (date: Date) => void;
   finishWorkout: () => { exercises: ActiveExercise[]; startedAt: Date; sessionId: string };
   resetWorkout: () => void;
 }
@@ -252,6 +253,8 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   expandWorkout: () => set({ isMinimized: false }),
 
   setPrCache: (cache) => set({ prCache: cache }),
+
+  setStartedAt: (date) => set({ startedAt: date }),
 
   finishWorkout: () => {
     const { exercises, startedAt, sessionId } = get();

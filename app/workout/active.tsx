@@ -236,11 +236,43 @@ function DurationCell({
   const mm = String(Math.floor(value / 60)).padStart(2, '0');
   const ss = String(value % 60).padStart(2, '0');
 
+  const commitM = (text: string) => {
+    const m = Math.max(0, parseInt(text) || 0);
+    onUpdate(m * 60 + (value % 60));
+  };
+
+  const commitS = (text: string) => {
+    const sec = Math.min(59, Math.max(0, parseInt(text) || 0));
+    onUpdate(Math.floor(value / 60) * 60 + sec);
+  };
+
   return (
-    <TouchableOpacity style={s.durationCell} onPress={onToggle}>
-      <Ionicons name={isRunning ? 'pause' : 'play'} size={14} color={isRunning ? COLORS.amber : COLORS.primary} />
-      <Text style={[s.durationTxt, isRunning && { color: COLORS.amber }]}>{mm}:{ss}</Text>
-    </TouchableOpacity>
+    <View style={s.durationCell}>
+      <TouchableOpacity onPress={onToggle} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+        <Ionicons name={isRunning ? 'pause' : 'play'} size={14} color={isRunning ? COLORS.amber : COLORS.primary} />
+      </TouchableOpacity>
+      <TextInput
+        style={[s.durationInput2, isRunning && s.durationInputRunning]}
+        keyboardType="number-pad"
+        value={mm}
+        onChangeText={v => onUpdate((parseInt(v) || 0) * 60 + (value % 60))}
+        onEndEditing={e => commitM(e.nativeEvent.text)}
+        editable={!isRunning}
+        maxLength={3}
+        selectTextOnFocus
+      />
+      <Text style={[s.durationColon2, isRunning && { color: COLORS.amber }]}>:</Text>
+      <TextInput
+        style={[s.durationInput2, isRunning && s.durationInputRunning]}
+        keyboardType="number-pad"
+        value={ss}
+        onChangeText={v => onUpdate(Math.floor(value / 60) * 60 + Math.min(59, parseInt(v) || 0))}
+        onEndEditing={e => commitS(e.nativeEvent.text)}
+        editable={!isRunning}
+        maxLength={2}
+        selectTextOnFocus
+      />
+    </View>
   );
 }
 
@@ -429,11 +461,15 @@ export default function ActiveWorkoutScreen() {
     startRest, adjustRest, tickRest, skipRest,
     restRemaining, restActive, restSeconds,
     coachText, setCoachText, nextCoachMessage,
-    resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache,
+    resetWorkout, minimizeWorkout, expandWorkout, prCache, setPrCache, setStartedAt,
   } = useWorkoutStore();
   const { user } = useUserStore();
 
   const [elapsed, setElapsed] = useState(0);
+  const [showElapsedEditor, setShowElapsedEditor] = useState(false);
+  const [draftElapsedH, setDraftElapsedH] = useState('0');
+  const [draftElapsedM, setDraftElapsedM] = useState('0');
+  const [draftElapsedS, setDraftElapsedS] = useState('0');
   const [restCoachMsg, setRestCoachMsg] = useState<string | null>(null);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [coachLoading, setCoachLoading] = useState<string | null>(null);
@@ -645,7 +681,17 @@ export default function ActiveWorkoutScreen() {
           <Text style={s.routineName} numberOfLines={1}>
             {routineName ?? 'Quick Workout'}
           </Text>
-          <Text style={s.elapsed}>{formatDuration(elapsed)}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              setDraftElapsedH(String(Math.floor(elapsed / 3600)));
+              setDraftElapsedM(String(Math.floor((elapsed % 3600) / 60)));
+              setDraftElapsedS(String(elapsed % 60));
+              setShowElapsedEditor(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={s.elapsed}>{formatDuration(elapsed)}</Text>
+          </TouchableOpacity>
         </View>
         <View style={s.headerActions}>
           <TouchableOpacity style={s.discardBtn} onPress={confirmDiscard} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -892,6 +938,76 @@ export default function ActiveWorkoutScreen() {
           setReplaceForExerciseId(null);
         }}
       />
+
+      {/* Elapsed time editor */}
+      <Modal
+        visible={showElapsedEditor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowElapsedEditor(false)}
+      >
+        <TouchableOpacity style={s.elapsedModalBackdrop} activeOpacity={1} onPress={() => setShowElapsedEditor(false)}>
+          <TouchableOpacity activeOpacity={1} style={s.elapsedModal}>
+            <Text style={s.elapsedModalTitle}>Edit Duration</Text>
+            <View style={s.elapsedModalFields}>
+              <View style={s.elapsedField}>
+                <TextInput
+                  style={s.elapsedInput}
+                  keyboardType="number-pad"
+                  value={draftElapsedH}
+                  onChangeText={setDraftElapsedH}
+                  maxLength={2}
+                  selectTextOnFocus
+                />
+                <Text style={s.elapsedUnit}>h</Text>
+              </View>
+              <Text style={s.elapsedColon}>:</Text>
+              <View style={s.elapsedField}>
+                <TextInput
+                  style={s.elapsedInput}
+                  keyboardType="number-pad"
+                  value={draftElapsedM}
+                  onChangeText={setDraftElapsedM}
+                  maxLength={2}
+                  selectTextOnFocus
+                />
+                <Text style={s.elapsedUnit}>m</Text>
+              </View>
+              <Text style={s.elapsedColon}>:</Text>
+              <View style={s.elapsedField}>
+                <TextInput
+                  style={s.elapsedInput}
+                  keyboardType="number-pad"
+                  value={draftElapsedS}
+                  onChangeText={setDraftElapsedS}
+                  maxLength={2}
+                  selectTextOnFocus
+                />
+                <Text style={s.elapsedUnit}>s</Text>
+              </View>
+            </View>
+            <View style={s.elapsedActions}>
+              <TouchableOpacity style={s.elapsedCancel} onPress={() => setShowElapsedEditor(false)}>
+                <Text style={s.elapsedCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.elapsedConfirm}
+                onPress={() => {
+                  const h = Math.max(0, parseInt(draftElapsedH) || 0);
+                  const m = Math.min(59, Math.max(0, parseInt(draftElapsedM) || 0));
+                  const sec = Math.min(59, Math.max(0, parseInt(draftElapsedS) || 0));
+                  const total = h * 3600 + m * 60 + sec;
+                  setElapsed(total);
+                  setStartedAt(new Date(Date.now() - total * 1000));
+                  setShowElapsedEditor(false);
+                }}
+              >
+                <Text style={s.elapsedConfirmTxt}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1018,8 +1134,15 @@ const s = StyleSheet.create({
   },
   setInputDone: { backgroundColor: 'transparent', color: '#FFFFFF' },
 
-  durationCell: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  durationCell: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   durationTxt: { color: COLORS.ink, fontSize: 15, fontWeight: '700' },
+  durationInput2: {
+    color: COLORS.ink, fontSize: 15, fontWeight: '700',
+    backgroundColor: COLORS.surface3, borderRadius: 8,
+    paddingVertical: 6, textAlign: 'center', width: 38,
+  },
+  durationInputRunning: { backgroundColor: 'transparent', color: COLORS.amber },
+  durationColon2: { color: COLORS.ink, fontWeight: '700', fontSize: 15 },
 
   setCheck: {
     width: 36, height: 36, borderRadius: 8,
@@ -1114,6 +1237,41 @@ const s = StyleSheet.create({
     paddingVertical: 16, alignItems: 'center',
   },
   discardCancelTxt: { color: COLORS.ink, fontWeight: '600', fontSize: 16 },
+
+  // Elapsed time editor modal
+  elapsedModalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  elapsedModal: {
+    backgroundColor: COLORS.surface, borderRadius: 20,
+    paddingHorizontal: 24, paddingVertical: 24, width: 300,
+  },
+  elapsedModalTitle: {
+    color: COLORS.ink, fontWeight: '700', fontSize: 17,
+    textAlign: 'center', marginBottom: 20,
+  },
+  elapsedModalFields: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  elapsedField: { alignItems: 'center', gap: 4 },
+  elapsedInput: {
+    backgroundColor: COLORS.surface2, color: COLORS.ink,
+    fontWeight: '700', fontSize: 26, textAlign: 'center',
+    width: 62, borderRadius: 10, paddingVertical: 10,
+    borderWidth: 0.5, borderColor: COLORS.border,
+  },
+  elapsedUnit: { color: COLORS.ink3, fontSize: 12, fontWeight: '600' },
+  elapsedColon: { color: COLORS.ink2, fontSize: 24, fontWeight: '700', marginBottom: 16 },
+  elapsedActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  elapsedCancel: {
+    flex: 1, backgroundColor: COLORS.surface2, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  elapsedCancelTxt: { color: COLORS.ink2, fontWeight: '600', fontSize: 15 },
+  elapsedConfirm: {
+    flex: 1, backgroundColor: COLORS.primary, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  elapsedConfirmTxt: { color: 'white', fontWeight: '700', fontSize: 15 },
 
   // Exercise pickers
   pickerRoot: { flex: 1, backgroundColor: COLORS.surface },
