@@ -203,7 +203,7 @@ export default function WorkoutCompleteScreen() {
           {caloriesBurned > 0 && (
             <View style={s.statItem}>
               <Text style={s.statLabel}>Calories</Text>
-              <Text style={s.statValueGreen}>~{caloriesBurned} kcal</Text>
+              <Text style={s.statValueGreen}>{caloriesBurned} kcal</Text>
             </View>
           )}
         </View>

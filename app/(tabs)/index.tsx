@@ -501,7 +501,7 @@ export default function HomeScreen() {
                   <View style={s.doneStat}>
                     <Ionicons name="flame-outline" size={18} color={COLORS.green} />
                     <Text style={s.doneStatVal} numberOfLines={1} adjustsFontSizeToFit>
-                      ~{Math.max(0, todaySession.calories_burned ?? 0)}
+                      {Math.max(0, todaySession.calories_burned ?? 0)}
                     </Text>
                     <Text style={s.doneStatLab}>kcal</Text>
                   </View>
