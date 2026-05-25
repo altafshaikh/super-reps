@@ -156,7 +156,7 @@ export default function HomeScreen() {
     const [sessionsRes, prFlat, routinesRes, scheduleRes] = await Promise.all([
       supabase
         .from('workout_sessions')
-        .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at')
+        .select('id, started_at, volume_total, duration_seconds, routine_name, finished_at, calories_burned')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .not('finished_at', 'is', null)
@@ -482,6 +482,16 @@ export default function HomeScreen() {
                 <Text style={s.doneStatVal}>{todaySetsCount}</Text>
                 <Text style={s.doneStatLab}>Total sets</Text>
               </View>
+              {(todaySession.calories_burned ?? 0) > 0 && (
+                <>
+                  <View style={s.doneStatDivider} />
+                  <View style={s.doneStat}>
+                    <Ionicons name="flame-outline" size={18} color={COLORS.green} />
+                    <Text style={s.doneStatVal}>~{todaySession.calories_burned}</Text>
+                    <Text style={s.doneStatLab}>kcal</Text>
+                  </View>
+                </>
+              )}
             </View>
           </SRCard>
         )}
