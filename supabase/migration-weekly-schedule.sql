@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS weekly_schedule (
 
 ALTER TABLE weekly_schedule ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "weekly_schedule_own" ON weekly_schedule;
 CREATE POLICY "weekly_schedule_own" ON weekly_schedule
   USING  (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());

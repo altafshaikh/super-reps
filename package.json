@@ -12,6 +12,7 @@
     "sync:vercel-env": "node scripts/sync-vercel-env.mjs",
     "deploy": "npm run build:web && vercel deploy --prod",
     "db:setup": "node --env-file=.env scripts/db-setup.mjs",
+    "db:migrate": "node --env-file=.env scripts/db-migrate.mjs",
     "db:exercises": "node --env-file=.env scripts/import-exercises.mjs",
     "db:exercises:dry": "node --env-file=.env scripts/import-exercises.mjs --dry-run --limit=3",
     "db:exercises:fast": "node --env-file=.env scripts/import-exercises.mjs --skip-images",
