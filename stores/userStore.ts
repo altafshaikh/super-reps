@@ -1,10 +1,55 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { User } from '@/types';
 import { supabase } from '@/lib/supabase';
 
 const REVIEW_TEXT_KEY = 'ai_review_text';
 const REVIEW_DATA_KEY = 'ai_review_data_key';
+
+/**
+ * Platform-safe key/value storage. SecureStore works on iOS/Android but on
+ * web it throws `getValueWithKeyAsync is not a function`. Mirror the pattern
+ * from `lib/supabase.ts`: localStorage on web, SecureStore on native.
+ *
+ * All errors are swallowed — failing to read/write the AI-review cache should
+ * never crash the app or block profile load.
+ */
+const kv = {
+  get(key: string): Promise<string | null> {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof window === 'undefined') return Promise.resolve(null);
+        return Promise.resolve(window.localStorage.getItem(key));
+      }
+      return SecureStore.getItemAsync(key).catch(() => null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  },
+  set(key: string, value: string): Promise<void> {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
+        return Promise.resolve();
+      }
+      return SecureStore.setItemAsync(key, value).then(() => undefined).catch(() => undefined);
+    } catch {
+      return Promise.resolve();
+    }
+  },
+  delete(key: string): Promise<void> {
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.localStorage.removeItem(key);
+        return Promise.resolve();
+      }
+      return SecureStore.deleteItemAsync(key).then(() => undefined).catch(() => undefined);
+    } catch {
+      return Promise.resolve();
+    }
+  },
+};
 
 interface UserStore {
   user: User | null;
@@ -37,18 +82,18 @@ export const useUserStore = create<UserStore>((set, get) => ({
   clearSignInBlockedMessage: () => set({ signInBlockedMessage: null }),
   setAIReview: (text, dataKey) => {
     set({ aiReview: text, aiReviewDataKey: dataKey });
-    SecureStore.setItemAsync(REVIEW_TEXT_KEY, text).catch(() => {});
-    SecureStore.setItemAsync(REVIEW_DATA_KEY, dataKey).catch(() => {});
+    void kv.set(REVIEW_TEXT_KEY, text);
+    void kv.set(REVIEW_DATA_KEY, dataKey);
   },
   clearAIReview: () => {
     set({ aiReview: null, aiReviewDataKey: null });
-    SecureStore.deleteItemAsync(REVIEW_TEXT_KEY).catch(() => {});
-    SecureStore.deleteItemAsync(REVIEW_DATA_KEY).catch(() => {});
+    void kv.delete(REVIEW_TEXT_KEY);
+    void kv.delete(REVIEW_DATA_KEY);
   },
   loadPersistedAIReview: async () => {
     const [text, dataKey] = await Promise.all([
-      SecureStore.getItemAsync(REVIEW_TEXT_KEY),
-      SecureStore.getItemAsync(REVIEW_DATA_KEY),
+      kv.get(REVIEW_TEXT_KEY),
+      kv.get(REVIEW_DATA_KEY),
     ]);
     if (text && dataKey) set({ aiReview: text, aiReviewDataKey: dataKey });
   },
