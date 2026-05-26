@@ -54,3 +54,4 @@ yarn-error.*
 
 issues/
 super-reps-*.zip
+.codex-pet-runs/*

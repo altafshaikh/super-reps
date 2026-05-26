@@ -1,6 +1,10 @@
 import { create } from 'zustand';
+import * as SecureStore from 'expo-secure-store';
 import type { User } from '@/types';
 import { supabase } from '@/lib/supabase';
+
+const REVIEW_TEXT_KEY = 'ai_review_text';
+const REVIEW_DATA_KEY = 'ai_review_data_key';
 
 interface UserStore {
   user: User | null;
@@ -13,6 +17,7 @@ interface UserStore {
   clearSignInBlockedMessage: () => void;
   setAIReview: (text: string, dataKey: string) => void;
   clearAIReview: () => void;
+  loadPersistedAIReview: () => Promise<void>;
   fetchProfile: (userId: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<{ error: { message: string; code?: string; details?: string } | null }>;
   signOut: () => Promise<void>;
@@ -30,8 +35,23 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   setUser: (user) => set({ user }),
   clearSignInBlockedMessage: () => set({ signInBlockedMessage: null }),
-  setAIReview: (text, dataKey) => set({ aiReview: text, aiReviewDataKey: dataKey }),
-  clearAIReview: () => set({ aiReview: null, aiReviewDataKey: null }),
+  setAIReview: (text, dataKey) => {
+    set({ aiReview: text, aiReviewDataKey: dataKey });
+    SecureStore.setItemAsync(REVIEW_TEXT_KEY, text).catch(() => {});
+    SecureStore.setItemAsync(REVIEW_DATA_KEY, dataKey).catch(() => {});
+  },
+  clearAIReview: () => {
+    set({ aiReview: null, aiReviewDataKey: null });
+    SecureStore.deleteItemAsync(REVIEW_TEXT_KEY).catch(() => {});
+    SecureStore.deleteItemAsync(REVIEW_DATA_KEY).catch(() => {});
+  },
+  loadPersistedAIReview: async () => {
+    const [text, dataKey] = await Promise.all([
+      SecureStore.getItemAsync(REVIEW_TEXT_KEY),
+      SecureStore.getItemAsync(REVIEW_DATA_KEY),
+    ]);
+    if (text && dataKey) set({ aiReview: text, aiReviewDataKey: dataKey });
+  },
 
   fetchProfile: async (userId) => {
     set({ loading: true });
@@ -68,6 +88,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }
 
     set({ user: row as User, loading: false });
+    get().loadPersistedAIReview();
   },
 
   updateProfile: async (updates) => {
