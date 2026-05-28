@@ -55,7 +55,7 @@ export default function RoutinesScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             className="flex-1 bg-brand-600 rounded-xl py-3 px-2 flex-row items-center justify-center gap-2"
-            onPress={() => router.push('/routines/ai-builder')}
+            onPress={() => router.push('/(tabs)/ai?intent=build')}
             activeOpacity={0.85}
           >
             <Ionicons name="sparkles" size={18} color="white" />
@@ -89,7 +89,7 @@ export default function RoutinesScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   className="flex-1 bg-brand-600 rounded-xl py-3 flex-row items-center justify-center gap-2"
-                  onPress={() => router.push('/routines/ai-builder')}
+                  onPress={() => router.push('/(tabs)/ai?intent=build')}
                 >
                   <Ionicons name="sparkles" size={18} color="white" />
                   <Text className="text-white font-bold text-sm">AI Build</Text>

@@ -59,25 +59,47 @@ export async function conductConversation(
     .map(e => `${e.slug}|${e.name}|${e.category}`)
     .join('\n');
 
-  const systemPrompt = `You are SuperReps AI — a personal trainer having a focused conversation to build the perfect workout programme.
+  // Build a profile block so the worker knows what it already has and never
+  // asks for it. Each line is short on purpose — these are budget tokens.
+  const profileLines: string[] = [];
+  if (userContext?.goal) profileLines.push(`Goal on file: ${userContext.goal}`);
+  if (userContext?.level) profileLines.push(`Level on file: ${userContext.level}`);
+  if (userContext?.equipment?.length)
+    profileLines.push(`Equipment on file: ${userContext.equipment.join(', ')}`);
+  const profileBlock = profileLines.length
+    ? `\nWhat you already know about this user (don't re-ask):\n${profileLines.map(l => `- ${l}`).join('\n')}\n`
+    : '';
 
-IMPORT DETECTION (check user's FIRST message only):
-If the message contains a structured workout copied from another fitness app (exercise names with sets/reps listed out), respond ONLY with valid JSON:
-{"type":"import","prompt":"<copy the user's message verbatim>"}
+  const systemPrompt = `You are SuperReps AI — a no-fluff personal trainer. Be terse and decisive.
+${profileBlock}
+ALWAYS respond with JSON in EXACTLY one of these three shapes (no other format permitted):
 
-QUESTIONNAIRE MODE (for fresh builds):
-Ask exactly one focused question per turn. Collect in this order:
-1. Goal (strength, hypertrophy/muscle growth, fat loss, general fitness)
-2. Days per week available for training
-3. Equipment (full gym, dumbbells only, home, bodyweight only)
-4. Experience level (beginner, intermediate, advanced)
-5. Specific exercises they MUST include — ask this explicitly, don't assume
-6. Exercises to avoid (injuries, dislikes)
+{"action":"generate","prompt":"<one-paragraph programme spec: goal, days/week, equipment, level if known, plus any must-include or must-avoid that the user volunteered>"}
 
-When you have enough to build a complete programme (at minimum: goal + days + exercise preferences), respond ONLY with valid JSON:
-{"type":"generate","prompt":"<comprehensive programme description including every collected detail: goal, days, equipment, level, required exercises, exercises to avoid>"}
+{"action":"import","prompt":"<the user's verbatim pasted workout>"}
 
-Otherwise respond with your next question as plain conversational text (1-3 sentences max). Do NOT include JSON in conversational replies.
+{"action":"ask","question":"<one short bundled question, ≤25 words, asking for ALL missing required fields at once>"}
+
+DECISION RULES (apply in order, pick the first match):
+1. User pasted a structured workout from another app → action=import.
+2. You have goal + days/week + equipment (extracted from this message OR listed in profile above) → action=generate. Must-include / must-avoid lists are OPTIONAL; do NOT ask about them. Generate immediately.
+3. Otherwise → action=ask. Bundle all missing required fields into one short question. Never ask one at a time.
+
+EXAMPLES (study these carefully):
+
+USER: "Build me a 4-day upper/lower hypertrophy program, intermediate, barbell + dumbbells only."
+→ {"action":"generate","prompt":"4-day upper/lower hypertrophy split for an intermediate lifter with barbell and dumbbells only."}
+
+USER: "make me a routine"
+→ {"action":"ask","question":"What's your goal (strength / hypertrophy / fat loss), how many days a week can you train, and what equipment do you have?"}
+
+USER (profile has goal=hypertrophy, equipment=dumbbells): "I can train 3 days a week"
+→ {"action":"generate","prompt":"3-day full-body hypertrophy routine, dumbbells only."}
+
+USER pasted a long list of "Bench Press 3x8, Pull-ups 3x10..."
+→ {"action":"import","prompt":"Bench Press 3x8, Pull-ups 3x10, ..."}
+
+Never output anything outside the JSON. Never add preamble. Never wrap the JSON in markdown code fences.
 
 Available exercise library (slug|name|category):
 ${exerciseList}`;
@@ -91,9 +113,13 @@ ${exerciseList}`;
   const stream = await client.chat.completions.create({
     model: ROUTINE_MODEL,
     messages: groqMessages,
-    max_tokens: 600,
-    temperature: 0.5,
+    max_tokens: 350,
+    temperature: 0.2,
     stream: true,
+    // Hard-enforce JSON via response_format. With this on, Groq will only
+    // accept valid JSON output — drastically improves rule following because
+    // the model can't ramble or recite an apology.
+    response_format: { type: 'json_object' },
   });
 
   for await (const chunk of stream) {
@@ -102,15 +128,33 @@ ${exerciseList}`;
     onChunk?.(fullText);
   }
 
+  // The new schema uses `action` instead of `type`. We still accept the legacy
+  // `type` field for backwards-compatibility during the transition (in case a
+  // cached system prompt produces the old shape).
   const trimmed = fullText.trim();
-  if (trimmed.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed.type === 'import' && parsed.prompt) return { type: 'import', prompt: parsed.prompt };
-      if (parsed.type === 'generate' && parsed.prompt) return { type: 'generate', prompt: parsed.prompt };
-    } catch {
-      // not valid JSON — treat as message
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      action?: string;
+      type?: string;
+      prompt?: string;
+      question?: string;
+    };
+    const action = parsed.action ?? parsed.type;
+    if (action === 'import' && parsed.prompt) {
+      return { type: 'import', prompt: parsed.prompt };
     }
+    if (action === 'generate' && parsed.prompt) {
+      return { type: 'generate', prompt: parsed.prompt };
+    }
+    if (action === 'ask' && parsed.question) {
+      return { type: 'message', text: parsed.question };
+    }
+    if (action === 'message' && parsed.prompt) {
+      return { type: 'message', text: parsed.prompt };
+    }
+  } catch {
+    // Fall through to treating the raw text as a message — should be rare with
+    // response_format=json_object enforced server-side.
   }
   return { type: 'message', text: trimmed };
 }

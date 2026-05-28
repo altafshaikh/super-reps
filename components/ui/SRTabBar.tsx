@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { House } from 'phosphor-react-native/src/icons/House';
 import { Barbell } from 'phosphor-react-native/src/icons/Barbell';
 import { Robot } from 'phosphor-react-native/src/icons/Robot';
@@ -8,21 +7,15 @@ import { User } from 'phosphor-react-native/src/icons/User';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS } from '@/constants';
-import { useReduceMotion } from '@/context/MotionContext';
 import { useWorkoutStore } from '@/stores/workoutStore';
 import { formatDuration } from '@/lib/utils';
 
-const SCREEN_W = Dimensions.get('window').width;
 const TAB_BAR_H_PAD = 6;
-const PILL_W = 64;
-const PILL_H = 48;
-const SPRING = { mass: 0.3, damping: 20, stiffness: 200 };
-const PILL_COLOR = 'rgba(96,165,250,0.12)';
 
 const TABS = [
   { id: 'index',    label: 'Home',     Icon: House },
   { id: 'workouts', label: 'Workouts', Icon: Barbell },
-  { id: 'ai',       label: 'AI Build', Icon: Robot },
+  { id: 'ai',       label: 'Coach',    Icon: Robot },
   { id: 'profile',  label: 'Profile',  Icon: User },
 ];
 
@@ -107,33 +100,12 @@ interface SRTabBarProps {
 
 export function SRTabBar({ state, navigation }: SRTabBarProps) {
   const { isActive, isMinimized } = useWorkoutStore();
-  const reduceMotion = useReduceMotion();
-  const tabW = (SCREEN_W - TAB_BAR_H_PAD * 2) / 4;
-
-  const activeTabIdx = TABS.findIndex((tab) => {
-    const routeIndex = state.routes.findIndex((r: any) => r.name === tab.id);
-    return routeIndex !== -1 && state.index === routeIndex;
-  });
-
-  const pillX = useSharedValue(
-    activeTabIdx >= 0 ? TAB_BAR_H_PAD + activeTabIdx * tabW + (tabW - PILL_W) / 2 : TAB_BAR_H_PAD
-  );
-
-  useEffect(() => {
-    const target = activeTabIdx >= 0
-      ? TAB_BAR_H_PAD + activeTabIdx * tabW + (tabW - PILL_W) / 2
-      : pillX.value;
-    pillX.value = reduceMotion ? target : withSpring(target, SPRING);
-  }, [activeTabIdx, tabW, reduceMotion]);
-
-  const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: pillX.value }] }));
 
   return (
     <View>
       {isActive && isMinimized && <MinimizedWorkoutBar />}
       <View style={styles.container}>
-      {/* Sliding pill — absolutely positioned behind tabs */}
-      <Animated.View style={[styles.pill, pillStyle]} pointerEvents="none" />
+      {/* Sliding pill removed — active state is conveyed by icon fill + label colour. */}
 
       {TABS.map(({ id, label, Icon }, idx) => {
         const routeIndex = state.routes.findIndex((r: any) => r.name === id);
@@ -185,15 +157,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingHorizontal: TAB_BAR_H_PAD,
     paddingTop: 4,
-  },
-  pill: {
-    position: 'absolute',
-    top: 4,
-    left: 0,
-    width: PILL_W,
-    height: PILL_H,
-    borderRadius: 99,
-    backgroundColor: PILL_COLOR,
   },
   tab: {
     flex: 1,
