@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -143,6 +143,7 @@ export default function HomeScreen() {
   const [allSchedule, setAllSchedule]         = useState<{ weekday: number; routine_id: string }[]>([]);
   const [hasSchedule, setHasSchedule]         = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [readiness, setReadiness] = useState<{ label: string; color: string }>({
     label: '',
     color: COLORS.green,
@@ -201,6 +202,12 @@ export default function HomeScreen() {
   }, [user]);
 
   useFocusEffect(useCallback(() => { void fetchDashboard(); }, [fetchDashboard]));
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchDashboard();
+    setRefreshing(false);
+  }, [fetchDashboard]);
 
   const userName = user?.name ?? user?.username ?? user?.email?.split('@')[0] ?? 'Lifter';
   const initial = userName[0]?.toUpperCase() ?? 'U';
@@ -403,7 +410,11 @@ export default function HomeScreen() {
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16 }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.blue} />}
+      >
 
         {/* Greeting header */}
         <View style={s.greetRow}>

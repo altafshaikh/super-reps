@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, StatusBar,
-  ActivityIndicator, Modal, Pressable,
+  ActivityIndicator, Modal, Pressable, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,38 +73,44 @@ export default function WorkoutsScreen() {
   const [routines, setRoutines]       = useState<Routine[]>([]);
   const [schedule, setSchedule]       = useState<ScheduleEntry[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [creatingRoutine, setCreatingRoutine] = useState(false);
   // picker: weekday being edited (-1 = pick day first), and which routine is being assigned
   const [pickingDay, setPickingDay]       = useState<number | null>(null);
   const [pickingRoutineId, setPickingRoutineId] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  const fetchData = useCallback(async () => {
     if (!user) { setRoutines([]); setSchedule([]); setLoading(false); return; }
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      const [routinesRes, scheduleRes] = await Promise.all([
-        supabase
-          .from('routines')
-          .select(`*, days:routine_days(*, exercises:routine_exercises(*, exercise:exercises(*)))`)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(20),
-        supabase
-          .from('weekly_schedule')
-          .select('weekday, routine_id')
-          .eq('user_id', user.id),
-      ]);
-      if (cancelled) return;
-      setRoutines((routinesRes.data ?? []) as unknown as Routine[]);
-      setSchedule((scheduleRes.data ?? []) as ScheduleEntry[]);
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    const [routinesRes, scheduleRes] = await Promise.all([
+      supabase
+        .from('routines')
+        .select(`*, days:routine_days(*, exercises:routine_exercises(*, exercise:exercises(*)))`)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('weekly_schedule')
+        .select('weekday, routine_id')
+        .eq('user_id', user.id),
+    ]);
+    setRoutines((routinesRes.data ?? []) as unknown as Routine[]);
+    setSchedule((scheduleRes.data ?? []) as ScheduleEntry[]);
+    setLoading(false);
   }, [user]);
 
+  const load = useCallback(() => {
+    setLoading(true);
+    void fetchData();
+  }, [fetchData]);
+
   useFocusEffect(load);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }, [fetchData]);
 
   const assignDay = async (weekday: number, routine_id: string | null) => {
     if (!user) return;
@@ -191,7 +197,11 @@ export default function WorkoutsScreen() {
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.blue} />}
+      >
         <View style={[s.header, { paddingTop: insets.top + 16 }]}>
           <Text style={s.pageTitle}>Workouts</Text>
         </View>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Platform, Alert, Modal,
@@ -60,6 +60,7 @@ export default function WorkoutCompleteScreen() {
   const caloriesBurned = Math.max(0, Number(params.caloriesBurned) || 0);
 
   const [when, setWhen] = useState<Date>(startedAt ?? new Date());
+  const webDateInputRef = useRef<any>(null);
   const [durationSecs, setDurationSecs] = useState(durationSec);
   const [showDurationEditor, setShowDurationEditor] = useState(false);
   const [draftH, setDraftH] = useState(String(Math.floor(durationSec / 3600)));
@@ -211,8 +212,22 @@ export default function WorkoutCompleteScreen() {
         <View style={s.divider} />
 
         {/* When */}
-        <TouchableOpacity style={s.row} onPress={() => setPickerMode('date')} activeOpacity={0.7}>
-          <Text style={s.rowLabel}>When</Text>
+        <TouchableOpacity
+          style={s.row}
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              webDateInputRef.current?.showPicker?.();
+              webDateInputRef.current?.click?.();
+            } else {
+              setPickerMode('date');
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={s.rowLabelRow}>
+            <Text style={s.rowLabel}>When</Text>
+            <Ionicons name="chevron-forward" size={14} color={COLORS.ink4} />
+          </View>
           <Text style={s.rowValueBlue}>{formatWhen(when)}</Text>
         </TouchableOpacity>
 
@@ -285,6 +300,13 @@ export default function WorkoutCompleteScreen() {
       {pickerMode === 'time' && Platform.OS === 'android' && (
         <DateTimePicker value={when} mode="time" display="default" onChange={onTimeChange} />
       )}
+      {Platform.OS === 'web' && React.createElement('input', {
+        ref: webDateInputRef,
+        type: 'datetime-local',
+        style: { position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 },
+        value: `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}T${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`,
+        onChange: (e: any) => { if (e.target.value) setWhen(new Date(e.target.value)); },
+      })}
 
       {/* Duration editor modal */}
       <Modal
@@ -387,7 +409,8 @@ const s = StyleSheet.create({
   divider: { height: 0.5, backgroundColor: COLORS.border, marginVertical: 2 },
 
   row: { paddingVertical: 18 },
-  rowLabel: { color: COLORS.ink3, fontSize: 13, fontWeight: '500', marginBottom: 4 },
+  rowLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  rowLabel: { color: COLORS.ink3, fontSize: 13, fontWeight: '500' },
   rowValueBlue: { color: COLORS.blue, fontSize: 16, fontWeight: '500' },
 
   descSection: { paddingVertical: 18 },

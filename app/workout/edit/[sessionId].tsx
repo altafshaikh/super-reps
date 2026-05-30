@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, FlatList, Modal, ActivityIndicator, Platform, StyleSheet,
@@ -57,6 +57,7 @@ export default function EditWorkoutScreen() {
   const [durationSecs, setDurationSecs] = useState(0);
   const [notes, setNotes] = useState('');
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
+  const webDateInputRef = useRef<any>(null);
   const [showDurationEditor, setShowDurationEditor] = useState(false);
   const [draftH, setDraftH] = useState('0');
   const [draftM, setDraftM] = useState('0');
@@ -294,8 +295,22 @@ export default function EditWorkoutScreen() {
             />
           </View>
           <View style={s.metaDivider} />
-          <TouchableOpacity style={s.metaRow} onPress={() => setPickerMode('date')} activeOpacity={0.7}>
-            <Text style={s.metaLabel}>When</Text>
+          <TouchableOpacity
+            style={s.metaRow}
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                webDateInputRef.current?.showPicker?.();
+                webDateInputRef.current?.click?.();
+              } else {
+                setPickerMode('date');
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={s.metaLabelRow}>
+              <Text style={s.metaLabel}>When</Text>
+              <Ionicons name="chevron-forward" size={12} color={COLORS.ink4} />
+            </View>
             <Text style={s.metaValueBlue}>{formatWhen(when)}</Text>
           </TouchableOpacity>
           <View style={s.metaDivider} />
@@ -415,6 +430,13 @@ export default function EditWorkoutScreen() {
       {pickerMode === 'time' && Platform.OS === 'android' && (
         <DateTimePicker value={when} mode="time" display="default" onChange={onTimeChange} />
       )}
+      {Platform.OS === 'web' && React.createElement('input', {
+        ref: webDateInputRef,
+        type: 'datetime-local',
+        style: { position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 },
+        value: `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}T${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`,
+        onChange: (e: any) => { if (e.target.value) setWhen(new Date(e.target.value)); },
+      })}
 
       {/* Duration editor */}
       <Modal visible={showDurationEditor} transparent animationType="fade" onRequestClose={() => setShowDurationEditor(false)}>
@@ -616,7 +638,8 @@ const s = StyleSheet.create({
     overflow: 'hidden', marginBottom: 4,
   },
   metaRow: { paddingHorizontal: 16, paddingVertical: 14 },
-  metaLabel: { color: COLORS.ink3, fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  metaLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  metaLabel: { color: COLORS.ink3, fontSize: 12, fontWeight: '600' },
   metaValueBlue: { color: COLORS.blue, fontSize: 15, fontWeight: '500' },
   metaDivider: { height: 0.5, backgroundColor: COLORS.border },
   nameInput: {

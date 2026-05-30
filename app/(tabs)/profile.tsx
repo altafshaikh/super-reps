@@ -14,6 +14,7 @@ import {
   Modal,
   Share,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,6 +86,7 @@ interface StatSession {
   duration_seconds: number | null;
   volume_total: number;
   routine_name: string | null;
+  calories_burned: number | null;
 }
 interface StatSet {
   exercise_id: string;
@@ -105,44 +107,61 @@ function StatisticsTab() {
   const [activeMetric, setActiveMetric] = useState<ActivityMetric>('Volume');
 
   const periodDays = period === '1M' ? 30 : period === '3M' ? 90 : 730;
+  const [refreshing, setStatRefreshing] = useState(false);
 
-  useEffect(() => {
+  const fetchStats = useCallback(async () => {
     if (!user) { setStatLoading(false); return; }
-    let cancelled = false;
     setStatLoading(true);
-    (async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - periodDays);
-      const { data: sessData } = await supabase
-        .from('workout_sessions')
-        .select('id, started_at, duration_seconds, volume_total, routine_name')
-        .eq('user_id', user.id)
-        .is('deleted_at', null)
-        .gte('started_at', since.toISOString())
-        .order('started_at', { ascending: true });
-      if (cancelled) return;
-      const sessRows = (sessData ?? []) as StatSession[];
-      setStatSessions(sessRows);
-
-      if (sessRows.length > 0) {
-        const { data: setsData } = await supabase
-          .from('workout_sets')
-          .select('exercise_id, weight_kg, reps, completed_at, exercise:exercises(name, muscle_groups)')
-          .in('session_id', sessRows.map(s => s.id));
-        if (!cancelled) setStatSets((setsData ?? []) as unknown as StatSet[]);
-      } else {
-        setStatSets([]);
-      }
-      if (!cancelled) setStatLoading(false);
-    })();
-    return () => { cancelled = true; };
+    const since = new Date();
+    since.setDate(since.getDate() - periodDays);
+    const { data: sessData } = await supabase
+      .from('workout_sessions')
+      .select('id, started_at, duration_seconds, volume_total, routine_name, calories_burned')
+      .eq('user_id', user.id)
+      .is('deleted_at', null)
+      .gte('started_at', since.toISOString())
+      .order('started_at', { ascending: true });
+    const sessRows = (sessData ?? []) as StatSession[];
+    setStatSessions(sessRows);
+    if (sessRows.length > 0) {
+      const { data: setsData } = await supabase
+        .from('workout_sets')
+        .select('exercise_id, weight_kg, reps, completed_at, exercise:exercises(name, muscle_groups)')
+        .in('session_id', sessRows.map(s => s.id));
+      setStatSets((setsData ?? []) as unknown as StatSet[]);
+    } else {
+      setStatSets([]);
+    }
+    setStatLoading(false);
   }, [user, periodDays]);
+
+  useEffect(() => { void fetchStats(); }, [fetchStats]);
+
+  const onStatRefresh = useCallback(async () => {
+    setStatRefreshing(true);
+    await fetchStats();
+    setStatRefreshing(false);
+  }, [fetchStats]);
 
   const totalSessions = sessions.length;
   const totalVolume = sessions.reduce((a, s) => a + (s.volume_total ?? 0), 0);
   const avgDuration = sessions.length
     ? Math.round(sessions.reduce((a, s) => a + (s.duration_seconds ?? 0), 0) / sessions.length / 60)
     : 0;
+  const totalCalories = Math.round(sessions.reduce((a, s) => a + (s.calories_burned ?? 0), 0));
+
+  const monthlyCalories = useMemo(() => {
+    const map = new Map<string, number>();
+    sessions.forEach(s => {
+      const month = s.started_at.slice(0, 7);
+      map.set(month, (map.get(month) ?? 0) + (s.calories_burned ?? 0));
+    });
+    const keys = [...map.keys()].sort().slice(-6);
+    return keys.map(k => ({
+      label: new Date(k + '-15').toLocaleDateString('en-US', { month: 'short' }),
+      value: Math.round(map.get(k) ?? 0),
+    }));
+  }, [sessions]);
 
   const weeklyActivity = useMemo(() => {
     const volMap = new Map<string, number>();
@@ -245,7 +264,11 @@ function StatisticsTab() {
   }
 
   return (
-    <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={st.scroll}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onStatRefresh} tintColor={COLORS.blue} />}
+    >
       {/* Period toggle */}
       <View style={st.periodRow}>
         {(['1M', '3M', 'All'] as StatPeriod[]).map(p => (
@@ -260,6 +283,7 @@ function StatisticsTab() {
             { label: 'Sessions', val: String(totalSessions) },
             { label: 'Volume', val: totalVolume >= 1000 ? `${(totalVolume / 1000).toFixed(1)}k` : String(Math.round(totalVolume)), unit: 'kg' },
             { label: 'Avg Dur', val: String(avgDuration), unit: 'min' },
+            { label: 'Calories', val: totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : String(totalCalories), unit: 'kcal' },
           ].map((m, i) => (
             <View key={i} style={st.ribbonCell}>
               {i > 0 && <View style={st.cellDiv} />}
@@ -284,6 +308,17 @@ function StatisticsTab() {
             </View>
           </View>
           <BarChart data={barData} width={320} />
+        </SRCard>
+      )}
+
+      {/* Monthly Calories */}
+      {monthlyCalories.length > 0 && totalCalories > 0 && (
+        <SRCard style={st.card}>
+          <View style={st.cardHead}>
+            <Text style={st.cardTitle}>Calories Burned</Text>
+            <Text style={st.caloriesTotalBadge}>{totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories} kcal</Text>
+          </View>
+          <BarChart data={monthlyCalories} width={320} />
         </SRCard>
       )}
 
@@ -366,6 +401,7 @@ const st = StyleSheet.create({
   muscleBarFill: { height: '100%', backgroundColor: COLORS.blue, borderRadius: 99 },
   gainPill: { backgroundColor: COLORS.greenLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 },
   gainPillTxt: { fontSize: 11, fontWeight: '600', color: COLORS.green },
+  caloriesTotalBadge: { fontSize: 13, fontWeight: '700', color: COLORS.amber },
   liftStatRow: { flexDirection: 'row', marginTop: 12 },
   liftStatCell: { flex: 1, alignItems: 'center' },
   liftStatLab: { fontSize: 10, color: COLORS.ink3, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },
@@ -390,6 +426,7 @@ function MeasuresTab() {
   const { user } = useUserStore();
   const [logs, setLogs] = useState<WeightLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  const [measRefreshing, setMeasRefreshing] = useState(false);
   const [logWeight, setLogWeight] = useState(70);
   const [logging, setLogging] = useState(false);
   const [period, setMeasurePeriod] = useState<MeasurePeriod>('1M');
@@ -407,8 +444,12 @@ function MeasuresTab() {
     setLoadingLogs(false);
   }, [user]);
 
-  useEffect(() => {
-    void fetchLogs();
+  useEffect(() => { void fetchLogs(); }, [fetchLogs]);
+
+  const onMeasRefresh = useCallback(async () => {
+    setMeasRefreshing(true);
+    await fetchLogs();
+    setMeasRefreshing(false);
   }, [fetchLogs]);
 
   // Pre-fill with yesterday's or most recent weight
@@ -459,7 +500,11 @@ function MeasuresTab() {
   }
 
   return (
-    <ScrollView contentContainerStyle={mt.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={mt.scroll}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={measRefreshing} onRefresh={onMeasRefresh} tintColor={COLORS.blue} />}
+    >
       {/* Quick log card */}
       <SRCard style={mt.card}>
         <Text style={mt.cardTitle}>Log Weight</Text>
@@ -599,37 +644,40 @@ function CalendarTab() {
   const [displayMonth, setDisplayMonth] = useState(today.getMonth());
   const [calSessions, setCalSessions]   = useState<CalSession[]>([]);
   const [trainingDays, setTrainingDays] = useState<Set<number>>(new Set()); // weekdays with routine
-  const [calLoading, setCalLoading]     = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
-  const [filter, setFilter]             = useState<StatFilter>('M');
+  const [calLoading, setCalLoading]       = useState(true);
+  const [calRefreshing, setCalRefreshing] = useState(false);
+  const [selectedDate, setSelectedDate]   = useState<string>(todayIso);
+  const [filter, setFilter]               = useState<StatFilter>('M');
 
-  useEffect(() => {
+  const fetchCal = useCallback(async () => {
     if (!user) { setCalLoading(false); return; }
-    let cancelled = false;
     setCalLoading(true);
-    (async () => {
-      const [sessionsRes, scheduleRes] = await Promise.all([
-        supabase
-          .from('workout_sessions')
-          .select('id, started_at, routine_name, duration_seconds')
-          .eq('user_id', user.id)
-          .is('deleted_at', null)
-          .not('finished_at', 'is', null)
-          .order('started_at', { ascending: false })
-          .limit(500),
-        supabase
-          .from('weekly_schedule')
-          .select('weekday')
-          .eq('user_id', user.id),
-      ]);
-      if (!cancelled) {
-        setCalSessions((sessionsRes.data ?? []) as CalSession[]);
-        setTrainingDays(new Set((scheduleRes.data ?? []).map((r: any) => r.weekday)));
-        setCalLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+    const [sessionsRes, scheduleRes] = await Promise.all([
+      supabase
+        .from('workout_sessions')
+        .select('id, started_at, routine_name, duration_seconds')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .not('finished_at', 'is', null)
+        .order('started_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('weekly_schedule')
+        .select('weekday')
+        .eq('user_id', user.id),
+    ]);
+    setCalSessions((sessionsRes.data ?? []) as CalSession[]);
+    setTrainingDays(new Set((scheduleRes.data ?? []).map((r: any) => r.weekday)));
+    setCalLoading(false);
   }, [user]);
+
+  useEffect(() => { void fetchCal(); }, [fetchCal]);
+
+  const onCalRefresh = useCallback(async () => {
+    setCalRefreshing(true);
+    await fetchCal();
+    setCalRefreshing(false);
+  }, [fetchCal]);
 
   const prevMonth = () => {
     if (displayMonth === 0) { setDisplayYear(y => y - 1); setDisplayMonth(11); }
@@ -711,7 +759,11 @@ function CalendarTab() {
   if (calLoading) return <View style={ct.loadWrap}><ActivityIndicator color={COLORS.blue} size="large" /></View>;
 
   return (
-    <ScrollView contentContainerStyle={ct.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={ct.scroll}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={calRefreshing} onRefresh={onCalRefresh} tintColor={COLORS.blue} />}
+    >
 
       {/* Time filter */}
       <View style={ct.filterRow}>
@@ -1050,17 +1102,25 @@ function ExercisesTab() {
   const [muscleFilter, setMuscleFilter] = useState('All');
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase
+  const [exRefreshing, setExRefreshing] = useState(false);
+
+  const fetchExercises = useCallback(async () => {
+    const { data } = await supabase
       .from('exercises')
       .select('id, name, category, muscle_groups, equipment, image_url')
       .order('name')
-      .limit(1000)
-      .then(({ data }) => {
-        setExercises((data ?? []) as CatalogExercise[]);
-        setLoading(false);
-      });
+      .limit(1000);
+    setExercises((data ?? []) as CatalogExercise[]);
+    setLoading(false);
   }, []);
+
+  useEffect(() => { void fetchExercises(); }, [fetchExercises]);
+
+  const onExRefresh = useCallback(async () => {
+    setExRefreshing(true);
+    await fetchExercises();
+    setExRefreshing(false);
+  }, [fetchExercises]);
 
   const filtered = useMemo(() => {
     let list = exercises;
@@ -1119,6 +1179,7 @@ function ExercisesTab() {
         style={et.list}
         contentContainerStyle={et.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={exRefreshing} onRefresh={onExRefresh} tintColor={COLORS.blue} />}
         ListEmptyComponent={
           <View style={et.center}>
             <Text style={et.emptyTxt}>No exercises found</Text>
@@ -1233,6 +1294,8 @@ function StubTab({ label }: { label: string }) {
 
 interface WorkoutsTabProps {
   loading: boolean;
+  refreshing: boolean;
+  onRefresh: () => Promise<void>;
   sessions: SessionRow[];
   prDerived: { bests: PersonalRecord[]; prCountBySession: Map<string, number> };
   handle: string;
@@ -1240,7 +1303,7 @@ interface WorkoutsTabProps {
   onMenuPress: (s: SessionRow) => void;
 }
 
-function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPress }: WorkoutsTabProps) {
+function WorkoutsTab({ loading, refreshing, onRefresh, sessions, prDerived, handle, initial, onMenuPress }: WorkoutsTabProps) {
   const router = useRouter();
   const { signOut } = useUserStore();
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -1255,7 +1318,11 @@ function WorkoutsTab({ loading, sessions, prDerived, handle, initial, onMenuPres
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.tabScrollContent}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={s.tabScrollContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.blue} />}
+    >
 
       {/* PRs strip */}
       {prDerived.bests.length > 0 && (
@@ -1420,9 +1487,13 @@ export default function ProfileScreen() {
     prCountBySession: Map<string, number>;
   }>({ bests: [], prCountBySession: new Map() });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [routineCount, setRoutineCount] = useState(0);
   const [activeTab, setActiveTab] = useState<ProfileTab>('workouts');
   const [menuSession, setMenuSession] = useState<SessionRow | null>(null);
+  const [saveRoutineSession, setSaveRoutineSession] = useState<SessionRow | null>(null);
+  const [saveRoutineName, setSaveRoutineName] = useState('');
+  const [savingRoutine, setSavingRoutine] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -1451,11 +1522,23 @@ export default function ProfileScreen() {
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   const handle = user?.username ?? user?.email?.split('@')[0] ?? 'lifter';
   const displayName = user?.name || (user?.username
     ? user.username.replace(/_/g, ' ')
     : (user?.email?.split('@')[0] ?? 'Lifter'));
   const initial = displayName[0]?.toUpperCase() ?? 'U';
+
+  const exerciseCount = useMemo(() => {
+    const ids = new Set<string>();
+    sessions.forEach(s => s.sets?.forEach(set => ids.add(set.exercise_id)));
+    return ids.size;
+  }, [sessions]);
 
   const streak = useMemo(() => {
     if (!sessions.length) return 0;
@@ -1532,6 +1615,75 @@ export default function ProfileScreen() {
     router.push('/workout/active');
   };
 
+  const confirmSaveAsRoutine = async () => {
+    if (!saveRoutineSession || !user) return;
+    const name = saveRoutineName.trim();
+    if (!name) return;
+    setSavingRoutine(true);
+    try {
+      const { data, error } = await supabase
+        .from('workout_sets')
+        .select('*, exercise:exercises(*)')
+        .eq('session_id', saveRoutineSession.id)
+        .order('set_index', { ascending: true });
+
+      if (error) throw error;
+
+      const grouped = new Map<string, { exercise: Exercise; rows: { weight_kg: number; reps: number }[] }>();
+      for (const row of (data ?? []) as CopyWorkoutSetRow[]) {
+        if (!row.exercise) continue;
+        const entry = grouped.get(row.exercise_id);
+        const setRow = { weight_kg: Number(row.weight_kg) || 0, reps: Number(row.reps) || 0 };
+        if (entry) {
+          entry.rows.push(setRow);
+        } else {
+          grouped.set(row.exercise_id, { exercise: row.exercise, rows: [setRow] });
+        }
+      }
+
+      if (grouped.size === 0) {
+        Alert.alert('Nothing to save', 'This workout has no recorded sets.');
+        setSavingRoutine(false);
+        return;
+      }
+
+      const { data: routineRow, error: routineErr } = await supabase
+        .from('routines')
+        .insert({ user_id: user.id, name })
+        .select()
+        .single();
+      if (routineErr) throw routineErr;
+
+      const { data: dayRow, error: dayErr } = await supabase
+        .from('routine_days')
+        .insert({ routine_id: routineRow.id, day_index: 0, name: 'Day 1' })
+        .select()
+        .single();
+      if (dayErr) throw dayErr;
+
+      let orderIndex = 0;
+      for (const [exerciseId, { rows }] of grouped) {
+        await supabase.from('routine_exercises').insert({
+          routine_day_id: dayRow.id,
+          exercise_id: exerciseId,
+          order_index: orderIndex++,
+          rest_seconds: user.rest_timer_default ?? 90,
+          sets_config: { sets: rows.length, rows },
+        });
+      }
+
+      setSaveRoutineSession(null);
+      Alert.alert('Saved!', `"${name}" added to your routines.`, [
+        { text: 'Go to Routines', onPress: () => router.push('/(tabs)/routines') },
+        { text: 'OK' },
+      ]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      Alert.alert('Error', `Failed to save routine: ${msg}`);
+    }
+    setSavingRoutine(false);
+  };
+
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
@@ -1568,6 +1720,7 @@ export default function ProfileScreen() {
                 { val: streak > 0 ? `${streak} 🔥` : '0', lab: 'Streak'   },
                 { val: String(sessions.length),             lab: 'Workouts' },
                 { val: String(routineCount),                lab: 'Routines' },
+                { val: String(exerciseCount),               lab: 'Exercises' },
               ].map((stat, i) => (
                 <View key={i} style={s.statItem}>
                   {i > 0 && <View style={s.statSep} />}
@@ -1616,6 +1769,8 @@ export default function ProfileScreen() {
       {activeTab === 'workouts' && (
         <WorkoutsTab
           loading={loading}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           sessions={sessions}
           prDerived={prDerived}
           handle={handle}
@@ -1647,7 +1802,12 @@ export default function ProfileScreen() {
                   <Ionicons name="share-outline" size={22} color={COLORS.ink} />
                   <Text style={s.sheetRowTxt}>Share workout</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.sheetRow} onPress={() => { setMenuSession(null); Alert.alert('Save as routine', 'We will add this in a future update.'); }}>
+                <TouchableOpacity style={s.sheetRow} onPress={() => {
+                  const session = menuSession;
+                  setMenuSession(null);
+                  setSaveRoutineName(session?.routine_name ?? 'My Routine');
+                  setSaveRoutineSession(session);
+                }}>
                   <Ionicons name="download-outline" size={22} color={COLORS.ink} />
                   <Text style={s.sheetRowTxt}>Save as routine</Text>
                 </TouchableOpacity>
@@ -1691,6 +1851,45 @@ export default function ProfileScreen() {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* ── Save as routine name modal ── */}
+      <Modal
+        visible={saveRoutineSession !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSaveRoutineSession(null)}
+      >
+        <TouchableOpacity style={s.sheetOverlay} activeOpacity={1} onPress={() => setSaveRoutineSession(null)}>
+          <TouchableOpacity activeOpacity={1} style={s.nameModal}>
+            <Text style={s.nameModalTitle}>Save as Routine</Text>
+            <TextInput
+              style={s.nameModalInput}
+              value={saveRoutineName}
+              onChangeText={setSaveRoutineName}
+              placeholder="Routine name"
+              placeholderTextColor={COLORS.ink3}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => void confirmSaveAsRoutine()}
+            />
+            <View style={s.nameModalActions}>
+              <TouchableOpacity style={s.nameModalCancel} onPress={() => setSaveRoutineSession(null)}>
+                <Text style={s.nameModalCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.nameModalConfirm, savingRoutine && { opacity: 0.6 }]}
+                onPress={() => void confirmSaveAsRoutine()}
+                disabled={savingRoutine}
+              >
+                {savingRoutine
+                  ? <ActivityIndicator size="small" color={COLORS.bg} />
+                  : <Text style={s.nameModalConfirmTxt}>Save</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1809,4 +2008,12 @@ const s = StyleSheet.create({
   sheetRowTxt: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
   sheetCancel: { alignItems: 'center', paddingVertical: 14 },
   footer: { textAlign: 'center', fontSize: 11, color: COLORS.ink3, marginTop: 12, marginBottom: 8, paddingHorizontal: 16 },
+  nameModal: { backgroundColor: COLORS.surface, borderRadius: 16, margin: 24, padding: 20, gap: 16 },
+  nameModalTitle: { fontSize: 17, fontWeight: '700', color: COLORS.ink, textAlign: 'center' },
+  nameModalInput: { backgroundColor: COLORS.bg, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: COLORS.ink },
+  nameModalActions: { flexDirection: 'row', gap: 10 },
+  nameModalCancel: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.surface3 },
+  nameModalCancelTxt: { fontSize: 15, fontWeight: '600', color: COLORS.ink2 },
+  nameModalConfirm: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 10, backgroundColor: COLORS.primary },
+  nameModalConfirmTxt: { fontSize: 15, fontWeight: '700', color: COLORS.bg },
 });
