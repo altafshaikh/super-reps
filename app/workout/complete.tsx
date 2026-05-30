@@ -86,12 +86,12 @@ export default function WorkoutCompleteScreen() {
     if (!user || !sessionId || saving) return;
     setSaving(true);
     try {
-      const now = new Date();
       const exerciseIds = [...new Set(exercises.map(e => e.exercise.id))];
       const historicalMax = await fetchHistoricalMaxWeightByExercise(user.id, exerciseIds);
       findAllSessionPRs(exercises, historicalMax); // computed for future use
 
       const setsToInsert: any[] = [];
+      const finishedAt = new Date(when.getTime() + durationSecs * 1000);
       for (const ex of exercises) {
         for (const set of ex.sets.filter(s => s.completed)) {
           setsToInsert.push({
@@ -104,7 +104,7 @@ export default function WorkoutCompleteScreen() {
             rpe: set.rpe,
             duration_seconds: set.duration_seconds,
             notes: ex.notes || null,
-            completed_at: now.toISOString(),
+            completed_at: finishedAt.toISOString(),
             started_at: set.started_at ? new Date(set.started_at).toISOString() : null,
             tempo_rps: set.tempo_rps ?? null,
           });
@@ -117,7 +117,7 @@ export default function WorkoutCompleteScreen() {
         routine_id: routineId,
         routine_name: routineName,
         started_at: when.toISOString(),
-        finished_at: now.toISOString(),
+        finished_at: finishedAt.toISOString(),
         duration_seconds: durationSecs,
         volume_total: volumeKg,
         calories_burned: caloriesBurned > 0 ? caloriesBurned : null,

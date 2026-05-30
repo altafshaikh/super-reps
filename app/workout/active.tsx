@@ -646,10 +646,6 @@ export default function ActiveWorkoutScreen() {
 
   const handleFinish = () => {
     const completedSets = exercises.flatMap(e => e.sets.filter(s => s.completed));
-    if (exercises.length === 0 || completedSets.length === 0) {
-      setShowDiscard(true);
-      return;
-    }
     const volumeTotal = exercises.reduce((a, ex) =>
       a + ex.sets.filter(s => s.completed).reduce((b, s) => b + s.weight_kg * s.reps, 0), 0);
     const bodyWeightKg = user?.body_weight_kg ?? 70;

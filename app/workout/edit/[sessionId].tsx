@@ -213,11 +213,13 @@ export default function EditWorkoutScreen() {
 
     // Recalculate volume_total and update session metadata
     const volume = toUpsert.reduce((sum, s) => sum + s.weight_kg * s.reps, 0);
+    const finishedAt = new Date(when.getTime() + durationSecs * 1000);
     await supabase.from('workout_sessions')
       .update({
         routine_name: routineName.trim() || null,
         volume_total: volume,
         started_at: when.toISOString(),
+        finished_at: finishedAt.toISOString(),
         duration_seconds: durationSecs,
         notes: notes.trim() || null,
       })
